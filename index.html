@@ -121,6 +121,8 @@ section.card{background:var(--surface);border-radius:16px;padding:14px 16px;disp
 .btn{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:7px 12px;font-size:14px}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 .btn.ghost{background:none}
+#waterLog{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.btn.cup{font-family:var(--num);font-variant-numeric:tabular-nums}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .waterbar{height:10px;border-radius:5px;background:var(--sunk);overflow:hidden}
 .waterbar i{display:block;height:100%;background:var(--water)}
@@ -234,11 +236,17 @@ button.chip{border:0;font:inherit}
     <div class="sechead"><h2>喝水 <button class="info" data-explain="water" aria-label="喝水目標說明"></button></h2><span class="num" id="waterSum"></span></div>
     <div class="waterbar"><i id="waterFill" style="width:0"></i></div>
     <div class="btnrow">
-      <button class="btn" data-water="250">+250 ml</button>
-      <button class="btn" data-water="500">+500 ml</button>
-      <button class="btn ghost" data-water="-250">−250</button>
+      <button class="btn cup" data-water="240">+240 ml</button>
+      <button class="btn cup" data-water="300">+300 ml</button>
+      <button class="btn cup" data-water="450">+450 ml</button>
     </div>
-    <div class="note">目標為飲品量：總水分 2.0 L（EFSA 女性足夠攝取量）約八成來自飲品，運動每小時另加 0.5 L。天熱請自行多喝。</div>
+    <div class="inline">
+      <input id="cupIn" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="自訂 ml" style="width:110px" aria-label="自訂水量 ml">
+      <button class="btn" id="cupAdd">加入</button>
+      <button class="btn ghost" id="cupUndo" hidden>復原上一杯</button>
+    </div>
+    <div class="m num" id="waterLog"></div>
+    <div class="note">按你手上杯子的容量加，沒有的大小用自訂。目標是飲品量，運動每小時另加 0.5 L，天熱請自己多喝。</div>
   </section>
   <section class="card">
     <div class="sechead"><h2>運動 <button class="info" data-explain="ex" aria-label="運動消耗說明"></button></h2><span class="num" id="exSum"></span></div>
@@ -572,6 +580,13 @@ function render(){
   // water
   $('#waterSum').textContent = `${d.water} / ${r0(R.waterT)} ml`;
   $('#waterFill').style.width = Math.min(100, d.water / R.waterT * 100) + '%';
+  const wl = d.waterLog || [];
+  const cupsN = wl.filter(x => !x.old).length;
+  $('#waterLog').textContent = wl.length ? `今天 ${cupsN} 杯：` + wl.map(x => (x.old ? '之前 ' : '') + x.ml).join(' + ') + ' ml' : '';
+  $('#cupUndo').hidden = !wl.length;
+  $('#cupUndo').textContent = wl.length ? `復原上一杯（${wl[wl.length-1].ml} ml）` : '復原上一杯';
+  const lastCup = profile.lastCup;
+  if (lastCup && document.activeElement !== $('#cupIn') && !$('#cupIn').value) $('#cupIn').placeholder = `自訂 ml（上次 ${lastCup}）`;
   // exercise
   $('#exSum').textContent = R.exNet ? `淨 ${r0(R.exNet)} kcal` : '';
   $('#exList').innerHTML = d.ex.length ? d.ex.map((x,i) =>
@@ -612,8 +627,7 @@ document.addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t) return;
   if (t.dataset.day){ sel = t.dataset.day; render(); }
   else if (t.dataset.wk){ sel = addDays(sel, +t.dataset.wk); render(); }
-  else if (t.dataset.water){ const d = dayOf(sel), before = d.water; d.water = Math.max(0, d.water + +t.dataset.water); saveDay(sel); render();
-    if (d.water > before) toast(waterComment(before, d.water)); }
+  else if (t.dataset.water){ addWater(+t.dataset.water); }
   else if (t.dataset.explain){ if (profile) explain(t.dataset.explain); }
   else if (t.dataset.editfood !== undefined){ openEdit(+t.dataset.editfood); }
   else if (t.dataset.delfood !== undefined){ dayOf(sel).food.splice(+t.dataset.delfood,1); saveDay(sel); render(); }
@@ -809,17 +823,45 @@ function foodComment(e){
   if (R.d.food.length === 1) return pickOne([`${who()}，今天第一筆，開帳成功 ✍️ 還剩 ${r0(remain)} kcal。`, `開張了。記錄本身就是最有效的習慣。`]);
   return pickOne([`記好了，還剩 ${r0(remain)} kcal。`, `入帳。剩 ${r0(remain)} kcal，蛋白質還差 ${r0(Math.max(0,gapP))} g。`, `收到，進度穩定。`]);
 }
-function waterComment(before, after){
-  const R = calc(sel), c0 = Math.floor(before/250), c1 = Math.floor(after/250), goalCups = Math.ceil(R.waterT/250);
+/* 喝水：每一杯各自記容量，杯數照實際喝的次數算 */
+function addWater(ml){
+  if (!profile) return;
+  ml = Math.round(ml);
+  if (!(ml >= 10 && ml <= 2000)) { toast('水量請填 10～2000 ml。'); return; }
+  const d = dayOf(sel), before = d.water;
+  d.waterLog = d.waterLog || [];
+  // 舊紀錄只有總量沒有分杯：先補一筆，復原時才不會算錯
+  const logged = d.waterLog.reduce((a,x) => a + x.ml, 0);
+  if (before > logged) d.waterLog.unshift({ml: before - logged, old:true});
+  d.waterLog.push({ml, t: now()});
+  d.water = before + ml;
+  saveDay(sel); render();
+  toast(waterComment(before, d.water, d.waterLog.filter(x => !x.old).length, ml));
+}
+$('#cupAdd').onclick = () => {
+  if (!profile) return;
+  const v = +$('#cupIn').value || +profile.lastCup || 0;
+  if (!v) { $('#cupIn').focus(); return; }
+  if (v !== profile.lastCup) { profile.lastCup = v; saveProfile(); }
+  $('#cupIn').value = ''; addWater(v);
+};
+$('#cupIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#cupAdd').click(); });
+$('#cupUndo').onclick = () => {
+  const d = dayOf(sel); if (!d.waterLog || !d.waterLog.length) return;
+  const x = d.waterLog.pop(); d.water = Math.max(0, d.water - x.ml);
+  saveDay(sel); render(); toast(`已復原 ${x.ml} ml。`);
+};
+function waterComment(before, after, cups, ml){
+  const R = calc(sel), left = Math.max(0, R.waterT - after);
   if (before < R.waterT && after >= R.waterT) return pickOne([`${who()}喝水目標達成 💧 ${after} ml，今天的水帳結清。`, `達標！${after} ml，腎臟向你致敬。`]);
-  const hit = [1,3,5,7].filter(n => c0 < n && c1 >= n).pop();
-  if (!hit) return '';
-  return {
-    1: pickOne([`第 1 杯，開喝了。`, `第 1 杯入帳，今天目標約 ${goalCups} 杯。`]),
-    3: pickOne([`第 3 杯，進度快一半了。`, `3 杯了，保持這個節奏。`]),
-    5: pickOne([`第 5 杯，比大多數人都穩。`, `5 杯，剩 ${Math.max(0, goalCups-5)} 杯就達標。`]),
-    7: pickOne([`第 7 杯，終點線在眼前。`, `7 杯！再一點點就結清。`])
-  }[hit];
+  if (ml >= 1000) return `一次 ${ml} ml？確認一下有沒有多打一個 0，打錯可以按「復原上一杯」。`;
+  const say = {
+    1: pickOne([`第 1 杯，開喝了。`, `第 1 杯入帳，今天還差 ${left} ml。`]),
+    3: pickOne([`第 3 杯，進度 ${r0(after/R.waterT*100)}%。`, `3 杯了，保持這個節奏。`]),
+    5: pickOne([`第 5 杯，比大多數人都穩。`, `5 杯，剩 ${left} ml 就達標。`]),
+    7: pickOne([`第 7 杯，終點線在眼前。`, `7 杯！再 ${left} ml 就結清。`])
+  };
+  return say[cups] || '';
 }
 function gradeDay(date){
   const d = days[date]; if (!d || !d.food.length) return null;
@@ -1108,7 +1150,7 @@ $('#bkFile').onchange = () => {
 function applyImport({o, ks}){
   ks.forEach(k => { const d = o.days[k];
     days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s'})),
-      water:N0(d.water), ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null};
+      water:N0(d.water), waterLog:Array.isArray(d.waterLog)?d.waterLog.filter(x=>x&&N0(x.ml)>0).map(x=>({ml:N0(x.ml), t:N0(x.t), ...(x.old?{old:true}:{})})):undefined, ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null};
     saveDay(k); });
   if (o.profile && typeof o.profile === 'object') {
     const keep = profile || {};
