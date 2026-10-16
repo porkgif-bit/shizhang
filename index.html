@@ -122,6 +122,8 @@ section.card{background:var(--surface);border-radius:16px;padding:14px 16px;disp
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 .btn.ghost{background:none}
 #waterLog{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--accent-soft);border-radius:12px;padding:10px 12px;font-size:14px}
+.btn.del-cup{border-color:var(--warn);color:var(--warn);background:none}
 .btn.cup{font-family:var(--num);font-variant-numeric:tabular-nums}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .waterbar{height:10px;border-radius:5px;background:var(--sunk);overflow:hidden}
@@ -235,18 +237,16 @@ button.chip{border:0;font:inherit}
   <section class="card">
     <div class="sechead"><h2>喝水 <button class="info" data-explain="water" aria-label="喝水目標說明"></button></h2><span class="num" id="waterSum"></span></div>
     <div class="waterbar"><i id="waterFill" style="width:0"></i></div>
-    <div class="btnrow">
-      <button class="btn cup" data-water="240">+240 ml</button>
-      <button class="btn cup" data-water="300">+300 ml</button>
-      <button class="btn cup" data-water="450">+450 ml</button>
-    </div>
+    <div class="btnrow" id="cups"></div>
     <div class="inline">
       <input id="cupIn" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="自訂 ml" style="width:110px" aria-label="自訂水量 ml">
       <button class="btn" id="cupAdd">加入</button>
+      <button class="btn ghost" id="cupEdit">管理杯子</button>
       <button class="btn ghost" id="cupUndo" hidden>復原上一杯</button>
     </div>
+    <div class="ask" id="cupAsk" role="status" hidden><span id="cupAskText"></span><span class="btnrow"><button class="btn primary" id="cupAskYes">記住</button><button class="btn ghost" id="cupAskNo">不用</button></span></div>
     <div class="m num" id="waterLog"></div>
-    <div class="note">按你手上杯子的容量加，沒有的大小用自訂。目標是飲品量，運動每小時另加 0.5 L，天熱請自己多喝。</div>
+    <div class="note">按你手上杯子的容量加。自訂的容量可以記住成快捷杯，用不到的杯子在「管理杯子」刪掉。目標是飲品量，運動每小時另加 0.5 L，天熱請自己多喝。</div>
   </section>
   <section class="card">
     <div class="sechead"><h2>運動 <button class="info" data-explain="ex" aria-label="運動消耗說明"></button></h2><span class="num" id="exSum"></span></div>
@@ -585,8 +585,7 @@ function render(){
   $('#waterLog').textContent = wl.length ? `今天 ${cupsN} 杯：` + wl.map(x => (x.old ? '之前 ' : '') + x.ml).join(' + ') + ' ml' : '';
   $('#cupUndo').hidden = !wl.length;
   $('#cupUndo').textContent = wl.length ? `復原上一杯（${wl[wl.length-1].ml} ml）` : '復原上一杯';
-  const lastCup = profile.lastCup;
-  if (lastCup && document.activeElement !== $('#cupIn') && !$('#cupIn').value) $('#cupIn').placeholder = `自訂 ml（上次 ${lastCup}）`;
+  renderCups();
   // exercise
   $('#exSum').textContent = R.exNet ? `淨 ${r0(R.exNet)} kcal` : '';
   $('#exList').innerHTML = d.ex.length ? d.ex.map((x,i) =>
@@ -685,7 +684,7 @@ function openSettings(first){
     $('#sImport') && ($('#sImport').onclick = () => { closeSheet(); $('#bkFile').value = ''; $('#bkFile').click(); });
     $('#sSave').onclick = () => {
       const pick = id => +$(id+' [aria-pressed=true]').dataset.v;
-      const n = {nick:$('#sNick').value.trim().slice(0,12), history:(profile&&profile.history)||[], sex:$('#sSex').value, age:+$('#sAge').value, height:+$('#sH').value, weight:+$('#sW').value, bf:(+$('#sBf').value >= 5 && +$('#sBf').value <= 60) ? r1(+$('#sBf').value) : 0,
+      const n = {nick:$('#sNick').value.trim().slice(0,12), history:(profile&&profile.history)||[], cups:(profile&&Array.isArray(profile.cups))?profile.cups:undefined, sex:$('#sSex').value, age:+$('#sAge').value, height:+$('#sH').value, weight:+$('#sW').value, bf:(+$('#sBf').value >= 5 && +$('#sBf').value <= 60) ? r1(+$('#sBf').value) : 0,
         pal:pick('#sPal'), deficit:pick('#sDef'), pkg:pick('#sPk'), customFoods:(profile&&profile.customFoods)||[]};
       if (profile && profile.tdeeOverride) n.tdeeOverride = profile.tdeeOverride;
       if (!(n.age>=18 && n.age<=100 && n.height>=120 && n.height<=220 && n.weight>=30 && n.weight<=250)) {
@@ -838,12 +837,43 @@ function addWater(ml){
   saveDay(sel); render();
   toast(waterComment(before, d.water, d.waterLog.filter(x => !x.old).length, ml));
 }
+/* 快捷杯：使用者自己的杯子清單，可以新增、刪除 */
+const DEFAULT_CUPS = [240, 300, 450];
+const myCups = () => Array.isArray(profile.cups) ? profile.cups : DEFAULT_CUPS;
+let cupEditing = false, askMl = 0;
+function renderCups(){
+  const cups = myCups();
+  $('#cups').innerHTML = cups.length
+    ? cups.map(ml => cupEditing
+        ? `<button class="btn cup del-cup" data-delcup="${ml}" aria-label="刪除 ${ml} ml 杯子">${ml} ml ✕</button>`
+        : `<button class="btn cup" data-water="${ml}">+${ml} ml</button>`).join('')
+    : '<span class="note">還沒有快捷杯。在下面輸入你杯子的容量，加入時選「記住」就會出現在這裡。</span>';
+  $('#cupEdit').textContent = cupEditing ? '完成' : '管理杯子';
+  $('#cupEdit').hidden = !cups.length && !cupEditing;
+}
+$('#cupEdit').onclick = () => { cupEditing = !cupEditing; renderCups(); };
+$('#cups').addEventListener('click', e => {
+  const b = e.target.closest('[data-delcup]'); if (!b) return;
+  e.stopPropagation();
+  profile.cups = myCups().filter(x => x !== +b.dataset.delcup); saveProfile();
+  if (!profile.cups.length) cupEditing = false;
+  renderCups(); toast(`已刪除 ${b.dataset.delcup} ml 杯子。`);
+});
+function askRemember(ml){
+  if (myCups().includes(ml) || myCups().length >= 6) return;
+  askMl = ml; $('#cupAskText').textContent = `要把 ${ml} ml 存成快捷杯嗎？之後按一下就好。`; $('#cupAsk').hidden = false;
+}
+$('#cupAskYes').onclick = () => {
+  profile.cups = [...new Set([...myCups(), askMl])].sort((a,b) => a - b); saveProfile();
+  $('#cupAsk').hidden = true; renderCups(); toast(`已記住 ${askMl} ml 杯子。`);
+};
+$('#cupAskNo').onclick = () => { $('#cupAsk').hidden = true; };
 $('#cupAdd').onclick = () => {
   if (!profile) return;
-  const v = +$('#cupIn').value || +profile.lastCup || 0;
+  const v = Math.round(+$('#cupIn').value || 0);
   if (!v) { $('#cupIn').focus(); return; }
-  if (v !== profile.lastCup) { profile.lastCup = v; saveProfile(); }
   $('#cupIn').value = ''; addWater(v);
+  if (v >= 10 && v <= 2000) askRemember(v);
 };
 $('#cupIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#cupAdd').click(); });
 $('#cupUndo').onclick = () => {
