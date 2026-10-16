@@ -660,7 +660,7 @@ function openSettings(first){
     <div class="field">減重赤字<div class="seg" id="sDef">${[0,0.10,0.15,0.20].map(v=>`<button type="button" data-v="${v}" aria-pressed="${v===p.deficit}">${v?Math.round(v*100)+'%':'維持'}</button>`).join('')}</div></div>
     <div class="field">蛋白質 g/kg<div class="seg" id="sPk">${[1.0,1.2,1.4,1.6].map(v=>`<button type="button" data-v="${v}" aria-pressed="${v===p.pkg}">${v.toFixed(1)}</button>`).join('')}</div></div>
     <div class="note" id="sNote"></div>
-    <div class="btnrow"><button class="btn primary" id="sSave">儲存</button>${first?'':'<button class="btn ghost" id="sCancel">取消</button>'}</div>
+    <div class="btnrow"><button class="btn primary" id="sSave">儲存</button>${first?'<button class="btn ghost" id="sImport">我有備份檔，從備份匯入</button>':'<button class="btn ghost" id="sCancel">取消</button>'}</div>
     <div class="note">資料保存：${meta.linked ? '存在你自己 Google 雲端的 App 專用資料夾，換手機登入同一個帳號就會同步回來；其他人看不到你的資料。' : '目前只存在這支手機的瀏覽器，清除網站資料會遺失。建議按右上角「連結 Google 雲端」。'}<br>iOS 健康 App 無法從網頁連接，需要原生 App 才能讀寫，等上架版再做。</div>
   `, () => {
     $('#sSex').value = p.sex;
@@ -668,6 +668,7 @@ function openSettings(first){
       const b = e.target.closest('button'); if (!b) return;
       $(id).querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); }));
     $('#sCancel') && ($('#sCancel').onclick = closeSheet);
+    $('#sImport') && ($('#sImport').onclick = () => { closeSheet(); $('#bkFile').value = ''; $('#bkFile').click(); });
     $('#sSave').onclick = () => {
       const pick = id => +$(id+' [aria-pressed=true]').dataset.v;
       const n = {nick:$('#sNick').value.trim().slice(0,12), history:(profile&&profile.history)||[], sex:$('#sSex').value, age:+$('#sAge').value, height:+$('#sH').value, weight:+$('#sW').value, bf:(+$('#sBf').value >= 5 && +$('#sBf').value <= 60) ? r1(+$('#sBf').value) : 0,
@@ -1094,8 +1095,11 @@ $('#bkFile').onchange = () => {
       if (!o || o.app !== '每日食帳' || typeof o.days !== 'object') throw 0;
       const ks = Object.keys(o.days).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && o.days[k] && Array.isArray(o.days[k].food));
       const clash = ks.filter(k => hasData(k)).length;
+      // 全新裝置、還沒有任何資料：不必再確認，直接匯入
+      if (!profile && !Object.keys(days).some(hasData)) { pendingImport = null; applyImport({o, ks}); return; }
       pendingImport = {o, ks};
       $('#bkImportBtn').textContent = `確認匯入 ${ks.length} 天`;
+      $('#backupCard').scrollIntoView({behavior:'smooth', block:'center'});
       bkMsg(`檔案有 ${ks.length} 天紀錄${clash ? `，其中 ${clash} 天和現有紀錄重疊，會以檔案為準` : ''}。再按一次「確認匯入」才會寫入。`, !!clash);
     } catch { pendingImport = null; bkMsg('這不是每日食帳的備份檔，請選「匯出備份」產生的 .json 檔。', true); }
   };
