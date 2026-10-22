@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>每日食帳</title>
-<meta name="description" content="個人飲食紀錄：熱量、三大營養素、喝水、運動，資料存在你自己的 Google 雲端。">
+<meta name="description" content="個人飲食紀錄：熱量、三大營養素、飲水、運動，資料存在你自己的 Google 雲端。">
 <meta name="theme-color" content="#1E7558">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -272,7 +272,7 @@ button.chip{border:0;font:inherit}
     <div id="meals"></div>
   </section>
   <section class="card">
-    <div class="sechead"><h2>喝水 <button class="info" data-explain="water" aria-label="喝水目標說明"></button></h2><span class="num" id="waterSum"></span></div>
+    <div class="sechead"><h2>飲水 <button class="info" data-explain="water" aria-label="飲水目標說明"></button></h2><span class="num" id="waterSum"></span></div>
     <div class="waterbar"><i id="waterFill" style="width:0"></i></div>
     <div class="btnrow" id="cups"></div>
     <div class="inline">
@@ -677,7 +677,7 @@ document.addEventListener('click', ev => {
   else if (t.dataset.water){ addWater(+t.dataset.water); }
   else if (t.dataset.explain){ if (profile) explain(t.dataset.explain); }
   else if (t.dataset.editfood !== undefined){ openEdit(+t.dataset.editfood); }
-  else if (t.dataset.delfood !== undefined){ dayOf(sel).food.splice(+t.dataset.delfood,1); saveDay(sel); render(); }
+  else if (t.dataset.delfood !== undefined){ removeFood(+t.dataset.delfood); }
   else if (t.dataset.delex !== undefined){ dayOf(sel).ex.splice(+t.dataset.delex,1); saveDay(sel); render(); }
   else if (t.id === 'calOn'){ profile.tdeeOverride = +t.dataset.v; saveProfile(); render(); }
   else if (t.id === 'calOff'){ delete profile.tdeeOverride; saveProfile(); render(); }
@@ -755,8 +755,8 @@ function openAdd(){
     </div>
     <div id="aBody"></div>
     <div class="sum" id="aSum"></div>
-    <div class="inline wtoggle"><label class="note"><input id="aWater" type="checkbox"> 也算進喝水</label>
-      <input id="aWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進喝水的 ml" disabled><span class="note">ml</span></div>
+    <div class="inline wtoggle"><label class="note"><input id="aWater" type="checkbox"> 也算進飲水</label>
+      <input id="aWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進飲水的 ml" disabled><span class="note">ml</span></div>
     <div class="btnrow"><button class="btn primary" id="aAdd">加入</button><button class="btn ghost" id="aClose">完成</button></div>
   `, () => {
     const meal = () => $('#aMeal [aria-pressed=true]').dataset.v;
@@ -803,7 +803,7 @@ function openAdd(){
           const mul = f.per ? q : grams/100;
           const nm = f.per ? (q === 1 ? f.n : f.n + ' ×' + q) : f.n + ' ' + ($('#fUnit').value==='g' ? q+' g' : q+' '+f.u);
           cur = {name: nm, k:f.k*mul, p:f.p*mul, c:f.c*mul, f:f.f*mul, s:N0(f.s)*mul, fb:N0(f.fb)*mul, na:N0(f.na)*mul}; showSum();
-          // 杯裝品項：先把容量帶進喝水欄位（不會自動勾選）
+          // 杯裝品項：先把容量帶進飲水欄位（不會自動勾選）
           if (!wmlTouched) $('#aWaterMl').value = (!f.per && f.u === '杯') ? Math.round(grams) : ''; };
         $('#fForget').onclick = () => { const f = all[pick]; if (!f || !f.hist) return;
           profile.history = (profile.history||[]).filter(h => h.n !== f.n); saveProfile(); pick = null; body(); $('#aSum').textContent = `已從吃過的移除：${f.n}`; };
@@ -838,12 +838,13 @@ function openAdd(){
       if (tab === 'custom' && $('#cSave').checked && cur._base) {
         profile.customFoods = (profile.customFoods||[]).filter(f => f.n !== cur._base.n); profile.customFoods.unshift(cur._base); saveProfile(); }
       const wOn = $('#aWater').checked, wml = Math.round(+$('#aWaterMl').value || 0);
-      if (wOn && !(wml >= 10 && wml <= 2000)) { $('#aSum').textContent = '勾了算進喝水，請填 10～2000 ml。'; $('#aWaterMl').focus(); return; }
+      if (wOn && !(wml >= 10 && wml <= 2000)) { $('#aSum').textContent = '勾了算進飲水，請填 10～2000 ml。'; $('#aWaterMl').focus(); return; }
       const {name,k,p,c,f} = cur;
       const entry = {name, k:r1(k), p:r1(p), c:r1(c), f:r1(f), s:r1(N0(cur.s)), fb:r1(N0(cur.fb)), na:r0(N0(cur.na)), meal: meal()};
+      if (wOn) entry.wid = newId();
       dayOf(sel).food.push(entry); remember(entry);
-      if (wOn) pushWater(wml, name);
-      saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進喝水 ${wml} ml。` : ''));
+      if (wOn) pushWater(wml, entry);
+      saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進飲水 ${wml} ml。` : ''));
       $('#aWater').checked = false; $('#aWaterMl').disabled = true; $('#aWaterMl').value = ''; wmlTouched = false;
       counts = {}; pick = null; body(); $('#aSum').textContent = `已加入：${name}`;
     };
@@ -868,12 +869,12 @@ function foodComment(e){
   const R = calc(sel), remain = R.target - R.eat.k, gapP = R.pT - R.eat.p;
   const pr = e.k ? e.p*4/e.k : 0, fr = e.k ? e.f*9/e.k : 0;
   const hour = new Date().getHours(), isToday = sel === TODAY;
-  if (remain < -200) return pickOne([`超標 ${r0(-remain)} kcal 了。今天就到這，明天照常，一天不會毀掉趨勢。`, `已經超過 ${r0(-remain)} kcal，接下來喝水就好，別用明天挨餓來補。`]);
+  if (remain < -200) return pickOne([`超標 ${r0(-remain)} kcal 了。今天就到這，明天照常，一天不會毀掉趨勢。`, `已經超過 ${r0(-remain)} kcal，接下來飲水就好，別用明天挨餓來補。`]);
   if (remain < 0) return pickOne([`剛好壓線超過 ${r0(-remain)} kcal，誤差範圍內，收工。`, `超一點點（${r0(-remain)} kcal），今天的帳差不多結清了。`]);
   if (isToday && hour >= 22 && e.k >= 150) return pickOne([`宵夜 ${r0(e.k)} kcal 記到了。記下來就比沒記強，${who()}。`, `深夜加點 ${r0(e.k)} kcal，還剩 ${r0(remain)}。`]);
   if (N0(e.s) >= 25) return pickOne([`這筆添加糖 ${r0(e.s)} g，今天上限 ${r0(R.sT)} g。手搖飲下次試試微糖或無糖。`, `糖 ${r0(e.s)} g 入帳，今天糖的額度${R.eat.s > R.sT ? '已經用完了' : `還剩 ${r0(R.sT - R.eat.s)} g`}。`]);
   if (N0(e.na) >= 1000) return pickOne([`這筆鈉 ${n0na(e.na)} mg，快到一天上限的一半。湯少喝幾口，醬汁別拌飯。`, `偏鹹（鈉 ${n0na(e.na)} mg）。明天早上體重高一點多半是水分，別被嚇到。`]);
-  if (R.eat.na > R.naT && R.eat.na - N0(e.na) <= R.naT) return `今天鈉超過 2,300 mg 了，接下來挑原型食物、多喝水。`;
+  if (R.eat.na > R.naT && R.eat.na - N0(e.na) <= R.naT) return `今天鈉超過 2,300 mg 了，接下來挑原型食物、多飲水。`;
   if (pr >= 0.3 && e.p >= 10) return pickOne([`這筆蛋白質 ${r1(e.p)} g，選得漂亮 💪`, `高蛋白一筆，蛋白質還差 ${r0(Math.max(0,gapP))} g。`, `${r1(e.p)} g 蛋白質入帳，這才是重訓人的吃法。`]);
   if (fr >= 0.55 && e.k >= 150) return pickOne([`這筆熱量一半以上來自脂肪，下一餐清淡點、多點蛋白質。`, `油有點多（脂肪佔 ${r0(fr*100)}%），下一餐挑燙的或蒸的。`]);
   if (e.k >= 600) return pickOne([`單筆 ${r0(e.k)} kcal，大餐一頓。還剩 ${r0(remain)}，晚點吃輕一點。`, `這筆分量不小（${r0(e.k)} kcal），剩下的額度要省著用。`]);
@@ -881,7 +882,7 @@ function foodComment(e){
   if (R.d.food.length === 1) return pickOne([`${who()}，今天第一筆，開帳成功 ✍️ 還剩 ${r0(remain)} kcal。`, `開張了。記錄本身就是最有效的習慣。`]);
   return pickOne([`記好了，還剩 ${r0(remain)} kcal。`, `入帳。剩 ${r0(remain)} kcal，蛋白質還差 ${r0(Math.max(0,gapP))} g。`, `收到，進度穩定。`]);
 }
-/* 喝水：每一杯各自記容量，杯數照實際喝的次數算 */
+/* 飲水：每一杯各自記容量，杯數照實際喝的次數算 */
 function addWater(ml){
   if (!profile) return;
   ml = Math.round(ml);
@@ -890,16 +891,31 @@ function addWater(ml){
   saveDay(sel); render();
   toast(waterComment(before, d.water, d.waterLog.filter(x => !x.old).length, ml));
 }
-// 只寫入、不存檔不提示；「記一筆」勾選算進喝水時也用這個
+// 只寫入、不存檔不提示；「記一筆」勾選算進飲水時也用這個
 function pushWater(ml, from){
   const d = dayOf(sel), before = d.water;
   d.waterLog = d.waterLog || [];
   // 舊紀錄只有總量沒有分杯：先補一筆，復原時才不會算錯
   const logged = d.waterLog.reduce((a,x) => a + x.ml, 0);
   if (before > logged) d.waterLog.unshift({ml: before - logged, old:true});
-  d.waterLog.push(from ? {ml, t: now(), from} : {ml, t: now()});
+  d.waterLog.push(from ? {ml, t: now(), from: from.name, wid: from.wid} : {ml, t: now()});
   d.water = before + ml;
   return before;
+}
+// 飲食紀錄和飲水的連結：食物有 wid，對應的飲水那筆也有同一個 wid（舊資料沒有 wid，就用品名對）
+function linkedWater(d, e){
+  const wl = d.waterLog || [];
+  if (e.wid) return wl.find(x => x.wid === e.wid) || null;
+  return wl.find(x => !x.wid && x.from === e.name) || null;
+}
+function unlinkWater(d, e){
+  const w = linkedWater(d, e); if (!w) return 0;
+  d.waterLog.splice(d.waterLog.indexOf(w), 1); d.water = Math.max(0, d.water - w.ml); return w.ml;
+}
+function removeFood(idx){
+  const d = dayOf(sel), e = d.food[idx]; if (!e) return;
+  d.food.splice(idx, 1); const ml = unlinkWater(d, e);
+  saveDay(sel); render(); if (ml) toast(`已刪除 ${e.name}，連同算進飲水的 ${ml} ml 一起扣掉。`);
 }
 /* 快捷杯：使用者自己的杯子清單，可以新增、刪除 */
 const DEFAULT_CUPS = [240, 300, 450];
@@ -947,7 +963,7 @@ $('#cupUndo').onclick = () => {
 };
 function waterComment(before, after, cups, ml){
   const R = calc(sel), left = Math.max(0, R.waterT - after);
-  if (before < R.waterT && after >= R.waterT) return pickOne([`${who()}喝水目標達成 💧 ${after} ml，今天的水帳結清。`, `達標！${after} ml，腎臟向你致敬。`]);
+  if (before < R.waterT && after >= R.waterT) return pickOne([`${who()}飲水目標達成 💧 ${after} ml，今天的水帳結清。`, `達標！${after} ml，腎臟向你致敬。`]);
   if (ml >= 1000) return `一次 ${ml} ml？確認一下有沒有多打一個 0，打錯可以按「復原上一杯」。`;
   const say = {
     1: pickOne([`第 1 杯，開喝了。`, `第 1 杯入帳，今天還差 ${left} ml。`]),
@@ -959,7 +975,7 @@ function waterComment(before, after, cups, ml){
 }
 /* ---------- 每日評分 v2 ----------
    熱量 35（連續給分；超過目標但沒超過 TDEE 的部分只算一半）
-   蛋白質 25、飲食品質 15（脂肪／鈉／添加糖各 5）、喝水 10
+   蛋白質 25、飲食品質 15（脂肪／鈉／添加糖各 5）、飲水 10
    三正餐紀錄 8＋運動 2、補給品 5（沒設定補給品的人直接給滿）
    當天結束（午夜）後鎖定；之後補登會顯示「補登後 B→C」 */
 const GRADE_VER = 2;
@@ -989,7 +1005,7 @@ function gradeDay(date){
   const sS = plan.length ? r1(5 * plan.filter(s => took.has(s.id)).length / plan.length) : 5;
   const score = Math.round(sK + sP + sQ + sW + sL + sS);
   const g = letter(score);
-  const parts = [['熱量', sK/35], ['蛋白質', sP/25], ['品質', sQ/15], ['喝水', sW/10], ['紀錄', sL/10], ['補給品', sS/5]];
+  const parts = [['熱量', sK/35], ['蛋白質', sP/25], ['品質', sQ/15], ['飲水', sW/10], ['紀錄', sL/10], ['補給品', sS/5]];
   const weak = parts.slice().sort((a,b) => a[1]-b[1])[0][0];
   const qWorst = [['脂肪', qF], ['鈉', qN], ['糖', qS]].sort((a,b) => a[1]-b[1])[0][0];
   const missing = [['b','早餐'],['l','午餐'],['d','晚餐']].filter(([m]) => !d.food.some(f => f.meal === m)).map(x => x[1]);
@@ -997,7 +1013,7 @@ function gradeDay(date){
     '熱量': e.k > R.target ? `熱量超了 ${r0(e.k-R.target)} kcal${e.k <= R.tdee + R.exNet ? '（還在維持量內，不會胖）' : ''}，明天正餐固定、點心先記再吃。` : `熱量比目標少 ${r0(R.target-e.k)} kcal，吃太少會拖累肌肉，明天補足。`,
     '蛋白質': `蛋白質只到 ${r0(e.p)}/${r0(R.pT)} g，明天每餐先放一份豆魚蛋肉。`,
     '品質': {'脂肪': `脂肪佔熱量 ${r0(fatPct*100)}%，明天主菜選烤、滷、蒸，青菜要燙的。`, '鈉': `鈉 ${r0(e.na).toLocaleString()} mg，明天湯少喝、醬汁分開放。`, '糖': `添加糖 ${r0(e.s)} g，明天飲料改微糖或無糖。`}[qWorst],
-    '喝水': `水只喝了 ${d.water} ml，明天桌上放一瓶，看到就喝。`,
+    '飲水': `水只喝了 ${d.water} ml，明天桌上放一瓶，看到就喝。`,
     '紀錄': missing.length ? `${missing.join('、')}沒記到，漏記的那餐才是看不見的帳。` : '記得把運動也記上，有加分。',
     '補給品': `補給品還有 ${plan.filter(s => !took.has(s.id)).map(s => s.name).join('、')} 沒吃。`
   }[weak];
@@ -1034,7 +1050,7 @@ function renderGrade(){
   $('#gLabel').textContent = sel === TODAY ? `今日暫評 · ${G.score} 分（午夜結算）`
     : changed ? `${sel} 結算 ${L.score} 分 · 補登後 ${L.g}→${G.g}（${G.score} 分）` : `${sel} 結算 · ${shown.score} 分`;
   $('#gComment').textContent = G.comment;
-  $('#gParts').innerHTML = [['熱量',G.sK,35],['蛋白質',G.sP,25],['品質',G.sQ,15],['喝水',G.sW,10],['紀錄',G.sL,10],['補給品',G.sS,5]]
+  $('#gParts').innerHTML = [['熱量',G.sK,35],['蛋白質',G.sP,25],['品質',G.sQ,15],['飲水',G.sW,10],['紀錄',G.sL,10],['補給品',G.sS,5]]
     .map(([n,v,m]) => `<div>${n}<b>${r0(v)}/${m}</b></div>`).join('');
 }
 
@@ -1434,7 +1450,7 @@ function explain(key){
       src:['dri']
     },
     water: {
-      eb:'喝水', t:'今天的飲水目標', lead:'指喝下去的飲品，不含食物裡的水',
+      eb:'飲水', t:'今天的飲水目標', lead:'指喝下去的飲品，不含食物裡的水',
       tag:'EFSA 女性 2.0 L', f:`2.0 L × 約 80% 來自飲品 = 1,600 ml\n+ 運動 ${r1(R.exHours)} 小時 × 500 ml`, res:`${n0(R.waterT)} ml`,
       body:['EFSA 建議女性每天總水分 2.0 L，條件是氣溫和活動量中等。高雄天氣熱，流汗多時請自己多喝。',
         '「80% 來自飲品」是常用的近似值，不是精確數字。'],
@@ -1456,7 +1472,7 @@ function explain(key){
     },
     grade: {
       eb:'每日結算', t:'A 到 F 怎麼算', lead:'滿分 100，分六項',
-      tag:'計分規則', f:`熱量貼近目標 35 分\n蛋白質達標 25 分\n飲食品質 15 分（脂肪、鈉、添加糖各 5）\n喝水達標 10 分\n早午晚三餐都有記 8 分 + 有運動 2 分\n補給品照表吃 5 分`, res:'90↑ A · 80 B · 70 C · 60 D · 50 E · 50↓ F',
+      tag:'計分規則', f:`熱量貼近目標 35 分\n蛋白質達標 25 分\n飲食品質 15 分（脂肪、鈉、添加糖各 5）\n飲水達標 10 分\n早午晚三餐都有記 8 分 + 有運動 2 分\n補給品照表吃 5 分`, res:'90↑ A · 80 B · 70 C · 60 D · 50 E · 50↓ F',
       body:['熱量誤差 5% 內拿滿分，之後連續扣分，不會因為差一點就掉一大截。超過目標但還在維持量（TDEE）以內的部分只扣一半，因為不會變胖；吃太少一樣會扣，長期赤字太大會掉肌肉。',
         '品質：脂肪佔熱量 30% 以內、鈉 2,300 mg 以內、添加糖在上限內各拿滿 5 分，超過越多扣越多。點心不算正餐。沒有設定補給品的人，補給品 5 分直接給滿。',
         '當天的分數會到午夜才結算鎖定；之後補登或修改，會顯示「補登後 B→C」，原本的分數保留。這是阿鹽自訂的規則，不是醫學標準。'],
@@ -1535,7 +1551,7 @@ function weekReview(ws){
   // ② 做得好的
   const good = [];
   if (pDays >= Math.ceil(n * 0.7)) good.push(`蛋白質平均 ${r0(avgP)} g，${pDays}/${n} 天達標，肌肉有顧到。`);
-  if (waterDays >= Math.ceil(n * 0.7)) good.push(`喝水 ${waterDays}/${n} 天達標。`);
+  if (waterDays >= Math.ceil(n * 0.7)) good.push(`飲水 ${waterDays}/${n} 天達標。`);
   if (sOver === 0 && rows.some(r => r.e.s > 0 || r.d.food.length)) good.push('添加糖整週沒有超過上限。');
   if (n >= 5) good.push(`這週記了 ${n} 天，紀錄本身就是最有效的習慣。`);
   if (deficit > 50 && !(avgK < avgTarget * 0.9)) good.push(`整週維持熱量赤字，平均每天約 ${r0(deficit)} kcal。`);
@@ -1666,7 +1682,7 @@ function aiText(ws, V, withBody){
   L.push(`- 每日目標：熱量約 ${r0(R0.target)} kcal（估計 TDEE ${r0(R0.tdee)} kcal、BMR ${r0(R0.bmr)} kcal），蛋白質 ${r0(R0.pT)} g（${profile.pkg} g/kg），脂肪 ${r0(R0.fT)} g（25%），碳水 ${r0(R0.cT)} g`);
   L.push(`- 每日上限：添加糖 ${r0(R0.sT)} g、鈉 2,300 mg；纖維目標 ${r0(R0.fbT)} g`, '');
   if (!V) { L.push('這週沒有飲食紀錄。'); return L.join('\n'); }
-  L.push('## 每日數據', '', '| 日期 | 熱量 kcal | 目標 kcal | 蛋白質 g | 碳水 g | 脂肪 g | 脂肪佔熱量 | 添加糖 g | 纖維 g | 鈉 mg | 喝水 ml | 運動 | App 評分 |',
+  L.push('## 每日數據', '', '| 日期 | 熱量 kcal | 目標 kcal | 蛋白質 g | 碳水 g | 脂肪 g | 脂肪佔熱量 | 添加糖 g | 纖維 g | 鈉 mg | 飲水 ml | 運動 | App 評分 |',
     '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   V.rows.forEach(r => { const e = r.e, G = r.G, was = r.L && r.L.score !== G.score ? `，結算時 ${r.L.g}，補登後改變` : '';
     L.push(`| ${mmdd(r.k)}(${'日一二三四五六'[r.dow]}) | ${r0(e.k)} | ${r0(r.R.target)} | ${r0(e.p)} | ${r0(e.c)} | ${r0(e.f)} | ${e.k ? r0(e.f*9/e.k*100) : 0}% | ${r0(e.s)} | ${r1(e.fb)} | ${r0(e.na)} | ${r.d.water} | ${r.d.ex.length ? r.d.ex.map(x => `${x.name}${x.min}分`).join('、') : '無'} | ${G.g}（${G.score}${was}） |`); });
@@ -1716,7 +1732,7 @@ function remember(e){
 }
 function openEdit(idx){
   const e = dayOf(sel).food[idx]; if (!e) return;
-  const base = {...e};
+  const base = {...e}, lw = linkedWater(dayOf(sel), e);
   openSheet(`
     <h2>修改這筆</h2>
     <div class="field">品名<input id="eN" value="${esc(e.name)}"></div>
@@ -1733,6 +1749,8 @@ function openEdit(idx){
       <label>纖維 g<input id="eFb" type="number" inputmode="decimal" value="${N0(e.fb)}"></label>
       <label>鈉 mg<input id="eNa" type="number" inputmode="decimal" value="${N0(e.na)}"></label>
     </div>
+    <div class="inline wtoggle"><label class="note"><input id="eWater" type="checkbox" ${lw ? 'checked' : ''}> 也算進飲水</label>
+      <input id="eWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進飲水的 ml" value="${lw ? lw.ml : ''}" ${lw ? '' : 'disabled'}><span class="note">ml</span></div>
     <label class="note"><input id="eHist" type="checkbox" checked> 同步更新「吃過的」，下次搜尋用新數值</label>
     <div class="note" id="eNote"></div>
     <div class="btnrow"><button class="btn primary" id="eSave">儲存</button><button class="btn ghost" id="eCancel">取消</button><button class="btn ghost danger" id="eDel">刪除這筆</button></div>
@@ -1744,22 +1762,32 @@ function openEdit(idx){
     document.querySelectorAll('[data-mul]').forEach(b => b.onclick = () => applyMul(+b.dataset.mul));
     $('#eMul').oninput = () => applyMul(+$('#eMul').value);
     $('#eCancel').onclick = closeSheet;
+    $('#eWater').onchange = () => { $('#eWaterMl').disabled = !$('#eWater').checked; if ($('#eWater').checked && !$('#eWaterMl').value) $('#eWaterMl').focus(); };
     let armed = false;
     $('#eDel').onclick = () => {
       if (!armed) { armed = true; $('#eDel').textContent = '再按一次確認刪除'; return; }
-      dayOf(sel).food.splice(idx, 1); saveDay(sel); closeSheet(); render(); };
+      closeSheet(); removeFood(idx); };
     $('#eSave').onclick = () => {
       const name = $('#eN').value.trim(), k = +$('#eK').value;
       if (!name || !(k >= 0) || $('#eK').value === '') { $('#eNote').className = 'note warn'; $('#eNote').textContent = '請填品名和熱量。'; return; }
+      const wOn = $('#eWater').checked, wml = Math.round(+$('#eWaterMl').value || 0);
+      if (wOn && !(wml >= 10 && wml <= 2000)) { $('#eNote').className = 'note warn'; $('#eNote').textContent = '勾了算進飲水，請填 10～2000 ml。'; return; }
       const upd = {name, k:r1(k), p:r1(+$('#eP').value||0), c:r1(+$('#eC').value||0), f:r1(+$('#eF').value||0), s:r1(+$('#eS').value||0), fb:r1(+$('#eFb').value||0), na:r0(+$('#eNa').value||0), meal: $('#eMeal [aria-pressed=true]').dataset.v};
-      dayOf(sel).food[idx] = upd; saveDay(sel);
+      const d = dayOf(sel); let wmsg = '';
+      if (wOn) {
+        upd.wid = e.wid || newId();
+        const w = linkedWater(d, e);
+        if (w) { const old = w.ml; d.water = Math.max(0, d.water - old + wml); w.ml = wml; w.from = name; w.wid = upd.wid; if (wml !== old) wmsg = `飲水從 ${old} 改成 ${wml} ml。`; }
+        else { pushWater(wml, upd); wmsg = `已算進飲水 ${wml} ml。`; }
+      } else { const ml = unlinkWater(d, e); if (ml) wmsg = `已從飲水扣掉 ${ml} ml。`; }
+      d.food[idx] = upd; saveDay(sel);
       if ($('#eHist').checked) {
         const h = profile.history || (profile.history = []);
         const i = h.findIndex(x => x.n === base.name || x.n === name);
         if (i >= 0) { h[i] = {...h[i], n:name, k:upd.k, p:upd.p, c:upd.c, f:upd.f, s:upd.s, fb:upd.fb, na:upd.na}; saveProfile(); }
         else remember(upd);
       }
-      closeSheet(); render(); };
+      closeSheet(); render(); if (wmsg) toast(wmsg); };
   });
 }
 
@@ -1789,7 +1817,7 @@ $('#bkJson').onclick = () => {
 $('#bkCsv').onclick = () => {
   const q = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g,'""') + '"' : t; };
   const ml = Object.fromEntries(MEALS);
-  const rows = [['日期','餐別','品名','熱量 kcal','蛋白質 g','碳水 g','脂肪 g','添加糖 g','纖維 g','鈉 mg','當日喝水 ml','當日體重 kg']];
+  const rows = [['日期','餐別','品名','熱量 kcal','蛋白質 g','碳水 g','脂肪 g','添加糖 g','纖維 g','鈉 mg','當日飲水 ml','當日體重 kg']];
   Object.keys(days).sort().forEach(k => { const d = days[k];
     if (!d.food.length && (d.water || d.weight)) rows.push([k,'','','','','','','','','',d.water||'',d.weight||'']);
     d.food.forEach((f,i) => rows.push([k, ml[f.meal]||'', f.name, f.k, f.p, f.c, f.f, N0(f.s), N0(f.fb), N0(f.na), i===0?(d.water||''):'', i===0?(d.weight||''):''])); });
