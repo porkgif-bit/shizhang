@@ -121,6 +121,8 @@ section.card{background:var(--surface);border-radius:16px;padding:14px 16px;disp
 .btn{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:7px 12px;font-size:14px}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 .btn.ghost{background:none}
+.wtoggle{gap:6px}
+.wtoggle input[type=number]:disabled{opacity:.5}
 #waterLog{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--accent-soft);border-radius:12px;padding:10px 12px;font-size:14px}
 .btn.del-cup{border-color:var(--warn);color:var(--warn);background:none}
@@ -626,7 +628,7 @@ function render(){
   $('#waterFill').style.width = Math.min(100, d.water / R.waterT * 100) + '%';
   const wl = d.waterLog || [];
   const cupsN = wl.filter(x => !x.old).length;
-  $('#waterLog').textContent = wl.length ? `今天 ${cupsN} 杯：` + wl.map(x => (x.old ? '之前 ' : '') + x.ml).join(' + ') + ' ml' : '';
+  $('#waterLog').textContent = wl.length ? `今天 ${cupsN} 杯：` + wl.map(x => (x.old ? '之前 ' : '') + x.ml + (x.from ? `（${x.from}）` : '')).join(' + ') + ' ml' : '';
   $('#cupUndo').hidden = !wl.length;
   $('#cupUndo').textContent = wl.length ? `復原上一杯（${wl[wl.length-1].ml} ml）` : '復原上一杯';
   renderCups();
@@ -753,9 +755,14 @@ function openAdd(){
     </div>
     <div id="aBody"></div>
     <div class="sum" id="aSum"></div>
+    <div class="inline wtoggle"><label class="note"><input id="aWater" type="checkbox"> 也算進喝水</label>
+      <input id="aWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進喝水的 ml" disabled><span class="note">ml</span></div>
     <div class="btnrow"><button class="btn primary" id="aAdd">加入</button><button class="btn ghost" id="aClose">完成</button></div>
   `, () => {
     const meal = () => $('#aMeal [aria-pressed=true]').dataset.v;
+    let wmlTouched = false;
+    $('#aWater').onchange = () => { $('#aWaterMl').disabled = !$('#aWater').checked; if ($('#aWater').checked && !$('#aWaterMl').value) $('#aWaterMl').focus(); };
+    $('#aWaterMl').oninput = () => { wmlTouched = true; };
     $('#aMeal').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
       $('#aMeal').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x===b)); });
     $('#aClose').onclick = closeSheet;
@@ -795,7 +802,9 @@ function openAdd(){
           const grams = f.per ? null : ($('#fUnit').value === 'g' ? q : q * f.g);
           const mul = f.per ? q : grams/100;
           const nm = f.per ? (q === 1 ? f.n : f.n + ' ×' + q) : f.n + ' ' + ($('#fUnit').value==='g' ? q+' g' : q+' '+f.u);
-          cur = {name: nm, k:f.k*mul, p:f.p*mul, c:f.c*mul, f:f.f*mul, s:N0(f.s)*mul, fb:N0(f.fb)*mul, na:N0(f.na)*mul}; showSum(); };
+          cur = {name: nm, k:f.k*mul, p:f.p*mul, c:f.c*mul, f:f.f*mul, s:N0(f.s)*mul, fb:N0(f.fb)*mul, na:N0(f.na)*mul}; showSum();
+          // 杯裝品項：先把容量帶進喝水欄位（不會自動勾選）
+          if (!wmlTouched) $('#aWaterMl').value = (!f.per && f.u === '杯') ? Math.round(grams) : ''; };
         $('#fForget').onclick = () => { const f = all[pick]; if (!f || !f.hist) return;
           profile.history = (profile.history||[]).filter(h => h.n !== f.n); saveProfile(); pick = null; body(); $('#aSum').textContent = `已從吃過的移除：${f.n}`; };
         $('#fQ').oninput = list;
@@ -828,10 +837,14 @@ function openAdd(){
       if (!cur) { $('#aSum').textContent = '先選擇或填寫食物。'; return; }
       if (tab === 'custom' && $('#cSave').checked && cur._base) {
         profile.customFoods = (profile.customFoods||[]).filter(f => f.n !== cur._base.n); profile.customFoods.unshift(cur._base); saveProfile(); }
+      const wOn = $('#aWater').checked, wml = Math.round(+$('#aWaterMl').value || 0);
+      if (wOn && !(wml >= 10 && wml <= 2000)) { $('#aSum').textContent = '勾了算進喝水，請填 10～2000 ml。'; $('#aWaterMl').focus(); return; }
       const {name,k,p,c,f} = cur;
       const entry = {name, k:r1(k), p:r1(p), c:r1(c), f:r1(f), s:r1(N0(cur.s)), fb:r1(N0(cur.fb)), na:r0(N0(cur.na)), meal: meal()};
       dayOf(sel).food.push(entry); remember(entry);
-      saveDay(sel); render(); toast(avoidMsg(entry.name) || foodComment(entry));
+      if (wOn) pushWater(wml, name);
+      saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進喝水 ${wml} ml。` : ''));
+      $('#aWater').checked = false; $('#aWaterMl').disabled = true; $('#aWaterMl').value = ''; wmlTouched = false;
       counts = {}; pick = null; body(); $('#aSum').textContent = `已加入：${name}`;
     };
     body();
@@ -873,15 +886,20 @@ function addWater(ml){
   if (!profile) return;
   ml = Math.round(ml);
   if (!(ml >= 10 && ml <= 2000)) { toast('水量請填 10～2000 ml。'); return; }
+  const d = dayOf(sel), before = pushWater(ml);
+  saveDay(sel); render();
+  toast(waterComment(before, d.water, d.waterLog.filter(x => !x.old).length, ml));
+}
+// 只寫入、不存檔不提示；「記一筆」勾選算進喝水時也用這個
+function pushWater(ml, from){
   const d = dayOf(sel), before = d.water;
   d.waterLog = d.waterLog || [];
   // 舊紀錄只有總量沒有分杯：先補一筆，復原時才不會算錯
   const logged = d.waterLog.reduce((a,x) => a + x.ml, 0);
   if (before > logged) d.waterLog.unshift({ml: before - logged, old:true});
-  d.waterLog.push({ml, t: now()});
+  d.waterLog.push(from ? {ml, t: now(), from} : {ml, t: now()});
   d.water = before + ml;
-  saveDay(sel); render();
-  toast(waterComment(before, d.water, d.waterLog.filter(x => !x.old).length, ml));
+  return before;
 }
 /* 快捷杯：使用者自己的杯子清單，可以新增、刪除 */
 const DEFAULT_CUPS = [240, 300, 450];
