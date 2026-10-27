@@ -232,6 +232,39 @@ button.chip{border:0;font:inherit}
 .xlinks{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:13.5px}
 .xlinks a{color:var(--accent)}
 .btn.block{width:100%;padding:13px;font-size:16px;border-radius:14px}
+/* 花費 */
+.rvcard{border:1px solid var(--accent);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--surface)}
+.mlist .rvcard+.rvcard{margin-top:8px}
+.rvhead{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.06em}
+.rvq{font-size:15px;line-height:1.6}
+.rvopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rvopt{padding:10px 0;background:var(--surface)}
+.rvopt[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.rvopt.rvregret{color:var(--warn);border-color:var(--warn)}
+.rvopt.rvregret[aria-pressed=true]{background:var(--warn);color:var(--surface);border-color:var(--warn)}
+.ccurve,.mchart{width:100%;height:auto;display:block}
+.ccurve .ax,.mchart .ax{stroke:var(--line);stroke-width:1}
+.ccurve .cl{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linecap:round}
+.ccurve .nowl{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;opacity:.6}
+.ccurve .dot{fill:var(--accent)}
+.mchart .bfood{fill:var(--accent)}
+.mchart .bgoods{fill:var(--carb)}
+.mchart .bv{font-family:var(--num);font-size:10.5px;fill:var(--ink)}
+.mchart .bl{font-size:11px;fill:var(--muted)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.legend .lf{background:var(--accent)}.legend .lg{background:var(--carb)}
+.bigcard{background:var(--sunk);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.bigcard+.bigcard{margin-top:8px}
+.big2{font-size:20px;font-weight:600;color:var(--accent)}
+.linkish{border:0;background:none;padding:0;font-weight:700;font-size:15px;text-align:left;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.due{font-size:12px;font-weight:700;color:var(--carb);background:var(--sunk);border:1px solid var(--carb);border-radius:999px;padding:2px 10px;white-space:nowrap}
+.yrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:6px 0}
+.yrow .t{display:flex;flex-direction:column;gap:5px;min-width:0}
+.yrow .k{font-family:var(--num);font-weight:600}
+.bigbox{background:var(--sunk);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.asktoggle{font-size:14px;color:var(--ink)}
+#spendReview:empty{display:none}
 @media (prefers-reduced-motion: reduce){.ring .val{transition:none}.toast{animation:none}}
 </style>
 </head>
@@ -270,6 +303,12 @@ button.chip{border:0;font:inherit}
   <section class="card" id="foodCard">
     <div class="sechead"><h2>飲食</h2><span class="num" id="foodSum"></span></div>
     <div id="meals"></div>
+  </section>
+  <section class="card" id="spendCard">
+    <div class="sechead"><h2>花費</h2><span class="num" id="spendSum"></span></div>
+    <div class="note" id="spendLine"></div>
+    <div id="spendReview"></div>
+    <div class="btnrow"><button class="btn" id="itemsOpen">物品與花費</button><button class="btn ghost" id="itemAddBtn">＋ 新增物品</button></div>
   </section>
   <section class="card">
     <div class="sechead"><h2>飲水 <button class="info" data-explain="water" aria-label="飲水目標說明"></button></h2><span class="num" id="waterSum"></span></div>
@@ -318,6 +357,7 @@ button.chip{border:0;font:inherit}
     <div class="btnrow">
       <button class="btn" id="bkJson">匯出備份</button>
       <button class="btn" id="bkCsv">匯出表格（CSV）</button>
+      <button class="btn" id="bkItemsCsv">匯出物品（CSV）</button>
       <button class="btn ghost" id="bkImportBtn">匯入備份</button>
       <input type="file" id="bkFile" accept=".json,application/json" hidden>
     </div>
@@ -387,16 +427,29 @@ const CLIENT_ID = '955060224473-vjj3ut7ku0u02k39fbsg7kc138htk9sn.apps.googleuser
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const FILE_NAME = 'shizhang-data.json';
 let profile = null; const days = {};
+let items = []; // 物品清單：每件各自有 id 和 _t，刪除時留 del 標記，兩台裝置才合併得起來
 const LS = 'shizhang.v1', LS_TOK = 'shizhang.tok', LS_META = 'shizhang.meta';
 function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
-function lsSave(){ lsSet(LS, {profile, days}); }
+function lsSave(){ lsSet(LS, {profile, days, items}); }
 let meta = lsGet(LS_META) || {linked:false, fileId:null, dirty:false};
 function saveMeta(){ lsSet(LS_META, meta); }
 const now = () => Date.now();
 function setState(t){ $('#saveState').textContent = t; }
 function saveProfile(){ if (profile) profile._t = now(); lsSave(); markDirty(); }
 function saveDay(date){ if (days[date]) days[date]._t = now(); lsSave(); markDirty(); }
+function saveItem(it){ it._t = now(); const i = items.findIndex(x => x.id === it.id); if (i >= 0) items[i] = it; else items.push(it); lsSave(); markDirty(); }
+// 每件物品各自比時間，新的贏
+function mergeItems(list){
+  let changed = false;
+  (Array.isArray(list) ? list : []).forEach(it => {
+    if (!it || typeof it.id !== 'string') return;
+    const i = items.findIndex(x => x.id === it.id);
+    if (i < 0) { items.push(it); changed = true; }
+    else if (N0(it._t) > N0(items[i]._t)) { items[i] = it; changed = true; }
+  });
+  return changed;
+}
 let syncTimer = null;
 function markDirty(){ meta.dirty = true; saveMeta(); updateSyncUI(); clearTimeout(syncTimer); syncTimer = setTimeout(sync, 2000); }
 
@@ -466,6 +519,7 @@ function merge(remote){
   for (const k of Object.keys(rd)) {
     if (!days[k] || N0(rd[k]._t) > N0(days[k]._t)) { days[k] = rd[k]; changed = true; }
   }
+  if (remote && mergeItems(remote.items)) changed = true;
   return changed;
 }
 let syncing = false, syncAgain = false;
@@ -483,7 +537,7 @@ async function sync(){
     }
     const changed = merge(remote);
     lsSave();
-    meta.fileId = await upload(meta.fileId, {app:'每日食帳', version:2, profile, days});
+    meta.fileId = await upload(meta.fileId, {app:'每日食帳', version:2, profile, days, items});
     meta.dirty = false; meta.lastSync = now(); saveMeta();
     if (changed) { render(); if (profile) closeWelcome(); }
   } catch (e) {
@@ -524,6 +578,7 @@ function openWelcome(){
 
 async function init(){
   const o = lsGet(LS) || {}; profile = o.profile || null; Object.assign(days, o.days || {});
+  items = Array.isArray(o.items) ? o.items : [];
   const ret = readAuthReturn();
   let silentWas = false; try { silentWas = sessionStorage.getItem('shizhang.silent') === '1'; sessionStorage.removeItem('shizhang.silent'); } catch {}
   if (ret && ret.ok) { meta.linked = true; saveMeta(); }
@@ -615,13 +670,14 @@ function render(){
   $('#tip').hidden = !tip; $('#tip').textContent = tip;
   // meals
   const d = R.d;
-  $('#foodSum').textContent = `${d.food.length} 筆`;
+  const foodCost = d.food.reduce((s,f) => s + N0(f.cost), 0);
+  $('#foodSum').textContent = `${d.food.length} 筆` + (foodCost ? ` · NT$${foodCost.toLocaleString()}` : '');
   $('#meals').innerHTML = d.food.length ? MEALS.map(([mk, ml]) => {
     const items = d.food.map((f,i) => ({...f, i})).filter(f => f.meal === mk);
     if (!items.length) return '';
     const sum = items.reduce((s,f)=>s+f.k,0);
     return `<div class="meal"><h3><span>${ml}</span><span class="num">${r0(sum)} kcal</span></h3>` + items.map(f =>
-      `<div class="row"><button class="t" data-editfood="${f.i}" aria-label="修改 ${esc(f.name)}"><div class="nm">${esc(f.name)}</div><div class="m">P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}${N0(f.na)?` · 鈉 ${r0(f.na)}`:''}${N0(f.s)?` · 糖 ${r1(f.s)}`:''}</div></button><span class="k">${r0(f.k)}</span><button class="del" data-delfood="${f.i}" aria-label="刪除 ${esc(f.name)}">×</button></div>`).join('') + '</div>';
+      `<div class="row"><button class="t" data-editfood="${f.i}" aria-label="修改 ${esc(f.name)}"><div class="nm">${esc(f.name)}${f.snack?'<span class="tag">零食</span>':''}</div><div class="m">${N0(f.cost)?`NT$${N0(f.cost).toLocaleString()} · `:''}P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}${N0(f.na)?` · 鈉 ${r0(f.na)}`:''}${N0(f.s)?` · 糖 ${r1(f.s)}`:''}</div></button><span class="k">${r0(f.k)}</span><button class="del" data-delfood="${f.i}" aria-label="刪除 ${esc(f.name)}">×</button></div>`).join('') + '</div>';
   }).join('') : `<div class="empty">${sel===TODAY?'今天還沒記錄。點下方「記一筆」，用份數最快。':'這天沒有飲食紀錄。'}</div>`;
   // water
   $('#waterSum').textContent = `${d.water} / ${r0(R.waterT)} ml`;
@@ -643,6 +699,7 @@ function render(){
   renderCalib(R);
   renderGrade();
   renderWeekCard();
+  renderSpend();
 }
 
 function renderCalib(R){
@@ -677,6 +734,7 @@ document.addEventListener('click', ev => {
   else if (t.dataset.water){ addWater(+t.dataset.water); }
   else if (t.dataset.explain){ if (profile) explain(t.dataset.explain); }
   else if (t.dataset.editfood !== undefined){ openEdit(+t.dataset.editfood); }
+  else if (t.dataset.edititem){ const it = items.find(x => x.id === t.dataset.edititem && !x.del); if (it) openItemForm(it, openItems); }
   else if (t.dataset.delfood !== undefined){ removeFood(+t.dataset.delfood); }
   else if (t.dataset.delex !== undefined){ dayOf(sel).ex.splice(+t.dataset.delex,1); saveDay(sel); render(); }
   else if (t.id === 'calOn'){ profile.tdeeOverride = +t.dataset.v; saveProfile(); render(); }
@@ -694,6 +752,8 @@ $('#wtSave').onclick = () => {
 };
 $('#btnSettings').onclick = () => openSettings(false);
 $('#fab').onclick = () => { if (profile) openAdd(); else openSettings(true); };
+$('#itemsOpen').onclick = () => { if (profile) openItems(); else openSettings(true); };
+$('#itemAddBtn').onclick = () => { if (profile) openItemForm(null, null); else openSettings(true); };
 
 /* ---------- sheets ---------- */
 function openSheet(html, onMount){
@@ -757,14 +817,21 @@ function openAdd(){
     <div class="sum" id="aSum"></div>
     <div class="inline wtoggle"><label class="note"><input id="aWater" type="checkbox"> 也算進飲水</label>
       <input id="aWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進飲水的 ml" disabled><span class="note">ml</span></div>
+    <div class="inline"><input id="aCost" type="number" inputmode="numeric" min="0" max="999999" step="1" placeholder="花了多少" style="width:120px" aria-label="金額（元）"><span class="note">元（選填）</span>
+      <label class="note"><input id="aSnack" type="checkbox"> 零食（非正餐）</label></div>
     <div class="btnrow"><button class="btn primary" id="aAdd">加入</button><button class="btn ghost" id="aClose">完成</button></div>
   `, () => {
     const meal = () => $('#aMeal [aria-pressed=true]').dataset.v;
     let wmlTouched = false;
     $('#aWater').onchange = () => { $('#aWaterMl').disabled = !$('#aWater').checked; if ($('#aWater').checked && !$('#aWaterMl').value) $('#aWaterMl').focus(); };
     $('#aWaterMl').oninput = () => { wmlTouched = true; };
+    // 零食預設：選「點心」就勾；自己動過就不再自動改
+    let snackTouched = false;
+    const syncSnack = () => { if (!snackTouched) $('#aSnack').checked = meal() === 's'; };
+    $('#aSnack').onchange = () => { snackTouched = true; };
     $('#aMeal').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
-      $('#aMeal').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x===b)); });
+      $('#aMeal').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x===b)); syncSnack(); });
+    syncSnack();
     $('#aClose').onclick = closeSheet;
     document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
       tab = b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-selected', x===b)); body(); });
@@ -810,7 +877,9 @@ function openAdd(){
         $('#fQ').oninput = list;
         $('#fList').onclick = e => { const b = e.target.closest('[data-fi]'); if (!b) return; pick = +b.dataset.fi; const f = all[pick];
           $('#fUnit').innerHTML = f.per ? '<option value="u">份</option>' : `<option value="u">${f.u}（${f.g} g）</option><option value="g">克</option>`;
-          $('#fQty').value = 1; list(); upd(); };
+          $('#fQty').value = 1;
+          if (f.hist && N0(f.cost) > 0 && !$('#aCost').value) $('#aCost').value = f.cost; // 吃過的：帶入上次的價錢
+          list(); upd(); };
         $('#fQty').oninput = upd; $('#fUnit').onchange = () => { $('#fQty').value = $('#fUnit').value==='g' ? all[pick].g : 1; upd(); };
         list(); upd();
       } else {
@@ -839,13 +908,18 @@ function openAdd(){
         profile.customFoods = (profile.customFoods||[]).filter(f => f.n !== cur._base.n); profile.customFoods.unshift(cur._base); saveProfile(); }
       const wOn = $('#aWater').checked, wml = Math.round(+$('#aWaterMl').value || 0);
       if (wOn && !(wml >= 10 && wml <= 2000)) { $('#aSum').textContent = '勾了算進飲水，請填 10～2000 ml。'; $('#aWaterMl').focus(); return; }
+      const costIn = $('#aCost').value.trim(), cost = Math.round(+costIn || 0);
+      if (costIn && !(cost >= 0 && cost <= 999999)) { $('#aSum').textContent = '金額請填 0～999,999 元，或留空。'; $('#aCost').focus(); return; }
       const {name,k,p,c,f} = cur;
       const entry = {name, k:r1(k), p:r1(p), c:r1(c), f:r1(f), s:r1(N0(cur.s)), fb:r1(N0(cur.fb)), na:r0(N0(cur.na)), meal: meal()};
+      if (cost > 0) entry.cost = cost;
+      if ($('#aSnack').checked) entry.snack = true;
       if (wOn) entry.wid = newId();
       dayOf(sel).food.push(entry); remember(entry);
       if (wOn) pushWater(wml, entry);
       saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進飲水 ${wml} ml。` : ''));
       $('#aWater').checked = false; $('#aWaterMl').disabled = true; $('#aWaterMl').value = ''; wmlTouched = false;
+      $('#aCost').value = ''; snackTouched = false; syncSnack();
       counts = {}; pick = null; body(); $('#aSum').textContent = `已加入：${name}`;
     };
     body();
@@ -1725,6 +1799,7 @@ function remember(e){
   const h = profile.history || (profile.history = []);
   const i = h.findIndex(x => x.n === e.name);
   const item = {n:e.name, k:e.k, p:e.p, c:e.c, f:e.f, s:N0(e.s), fb:N0(e.fb), na:N0(e.na), per:true, cnt:(i>=0 ? h[i].cnt : 0) + 1, last:TODAY};
+  if (N0(e.cost) > 0) item.cost = e.cost; else if (i >= 0 && N0(h[i].cost) > 0) item.cost = h[i].cost;
   if (i >= 0) h.splice(i, 1);
   h.unshift(item);
   if (h.length > 300) h.length = 300;
@@ -1751,6 +1826,8 @@ function openEdit(idx){
     </div>
     <div class="inline wtoggle"><label class="note"><input id="eWater" type="checkbox" ${lw ? 'checked' : ''}> 也算進飲水</label>
       <input id="eWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進飲水的 ml" value="${lw ? lw.ml : ''}" ${lw ? '' : 'disabled'}><span class="note">ml</span></div>
+    <div class="inline"><input id="eCost" type="number" inputmode="numeric" min="0" max="999999" step="1" placeholder="花了多少" style="width:120px" aria-label="金額（元）" value="${N0(e.cost) || ''}"><span class="note">元（選填）</span>
+      <label class="note"><input id="eSnack" type="checkbox" ${e.snack ? 'checked' : ''}> 零食（非正餐）</label></div>
     <label class="note"><input id="eHist" type="checkbox" checked> 同步更新「吃過的」，下次搜尋用新數值</label>
     <div class="note" id="eNote"></div>
     <div class="btnrow"><button class="btn primary" id="eSave">儲存</button><button class="btn ghost" id="eCancel">取消</button><button class="btn ghost danger" id="eDel">刪除這筆</button></div>
@@ -1772,7 +1849,11 @@ function openEdit(idx){
       if (!name || !(k >= 0) || $('#eK').value === '') { $('#eNote').className = 'note warn'; $('#eNote').textContent = '請填品名和熱量。'; return; }
       const wOn = $('#eWater').checked, wml = Math.round(+$('#eWaterMl').value || 0);
       if (wOn && !(wml >= 10 && wml <= 2000)) { $('#eNote').className = 'note warn'; $('#eNote').textContent = '勾了算進飲水，請填 10～2000 ml。'; return; }
+      const costIn = $('#eCost').value.trim(), cost = Math.round(+costIn || 0);
+      if (costIn && !(cost >= 0 && cost <= 999999)) { $('#eNote').className = 'note warn'; $('#eNote').textContent = '金額請填 0～999,999 元，或留空。'; return; }
       const upd = {name, k:r1(k), p:r1(+$('#eP').value||0), c:r1(+$('#eC').value||0), f:r1(+$('#eF').value||0), s:r1(+$('#eS').value||0), fb:r1(+$('#eFb').value||0), na:r0(+$('#eNa').value||0), meal: $('#eMeal [aria-pressed=true]').dataset.v};
+      if (cost > 0) upd.cost = cost;
+      if ($('#eSnack').checked) upd.snack = true;
       const d = dayOf(sel); let wmsg = '';
       if (wOn) {
         upd.wid = e.wid || newId();
@@ -1784,10 +1865,267 @@ function openEdit(idx){
       if ($('#eHist').checked) {
         const h = profile.history || (profile.history = []);
         const i = h.findIndex(x => x.n === base.name || x.n === name);
-        if (i >= 0) { h[i] = {...h[i], n:name, k:upd.k, p:upd.p, c:upd.c, f:upd.f, s:upd.s, fb:upd.fb, na:upd.na}; saveProfile(); }
+        if (i >= 0) { h[i] = {...h[i], n:name, k:upd.k, p:upd.p, c:upd.c, f:upd.f, s:upd.s, fb:upd.fb, na:upd.na}; if (upd.cost) h[i].cost = upd.cost; saveProfile(); }
         else remember(upd);
       }
       closeSheet(); render(); if (wmsg) toast(wmsg); };
+  });
+}
+
+/* ---------- 花費：物品清單、30 天回顧、每日成本、回購週期 ---------- */
+const ITEM_TYPES = [['big','大件'],['cons','消耗品'],['gen','一般']];
+const ITEM_CATS = ['衣','住','行','育','樂','3C','保養美妝','居家民生','寵物','其他'];
+const REVIEWS = [['good','值得'],['meh','普通'],['regret','後悔']];
+const typeName = t => (ITEM_TYPES.find(x => x[0] === t) || ITEM_TYPES[2])[1];
+const reviewName = v => (REVIEWS.find(x => x[0] === v) || ['',''])[1];
+const money = n => 'NT$' + r0(n).toLocaleString();
+const moneyShort = n => n >= 10000 ? r1(n/10000) + ' 萬' : r0(n).toLocaleString();
+const daysBetween = (a, b) => r0((parseYmd(b) - parseYmd(a)) / 864e5);
+const liveItems = () => items.filter(x => x && !x.del);
+const addMonths = (ym, n) => { const [y,m] = ym.split('-').map(Number); const d = new Date(y, m-1+n, 1); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); };
+const useLabel = d => d < 60 ? d + ' 天' : d < 365 ? r0(d/30) + ' 個月' : r1(d/365) + ' 年';
+const fullDate = k => k.slice(0,4) === TODAY.slice(0,4) ? mmdd(k) : k.replace(/-/g, '/');
+
+// 匯入的物品只留認得的欄位
+function cleanItem(x){
+  if (!x || typeof x.id !== 'string' || typeof x.name !== 'string') return null;
+  const out = {id:x.id.slice(0,20), name:x.name.slice(0,60), price:Math.max(0, r0(N0(x.price))),
+    date:/^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : TODAY,
+    type:['big','cons','gen'].includes(x.type) ? x.type : 'gen', cat:ITEM_CATS.includes(x.cat) ? x.cat : '其他', _t:N0(x._t)};
+  if (out.type === 'big') out.years = Math.min(30, Math.max(1, r0(N0(x.years)) || 3));
+  if (x.ask) out.ask = true;
+  if (x.review && REVIEWS.some(([k]) => k === x.review.v))
+    out.review = {v:x.review.v, note:String(x.review.note || '').slice(0,200), at:/^\d{4}-\d{2}-\d{2}$/.test(x.review.at) ? x.review.at : TODAY};
+  if (x.del) out.del = true;
+  return out;
+}
+
+// 買滿 30 天、開了回顧、還沒回答的
+const dueReviews = () => liveItems().filter(x => x.ask && !x.review && daysBetween(x.date, TODAY) >= 30).sort((a,b) => a.date.localeCompare(b.date));
+
+// 大件：價格 ÷ 用了幾天
+function dailyCost(x){
+  const used = Math.max(1, daysBetween(x.date, TODAY) + 1);
+  return {used, now: x.price / used, plan: x.price / (x.years * 365)};
+}
+function costCurve(x){
+  const W = 300, H = 64, start = 30;
+  const used = Math.max(1, daysBetween(x.date, TODAY) + 1);
+  const end = Math.max(x.years * 365, used);
+  const ymax = x.price / start;
+  const X = d => 4 + (d - start) / (end - start) * (W - 8), Y = v => 6 + (1 - v / ymax) * (H - 12);
+  let path = '';
+  for (let i = 0; i <= 48; i++) { const d = start + (end - start) * i / 48; path += (i ? 'L' : 'M') + X(d).toFixed(1) + ' ' + Y(x.price / d).toFixed(1); }
+  const u = Math.min(end, Math.max(start, used));
+  return `<svg class="ccurve" viewBox="0 0 ${W} ${H}" role="img" aria-label="每日成本從第一個月約 ${money(x.price/start)} 降到現在 ${money(x.price/used)}">
+    <line x1="0" y1="${H-1}" x2="${W}" y2="${H-1}" class="ax"/><path d="${path}" class="cl"/>
+    <line x1="${X(u).toFixed(1)}" y1="4" x2="${X(u).toFixed(1)}" y2="${H-1}" class="nowl"/><circle cx="${X(u).toFixed(1)}" cy="${Y(x.price/u).toFixed(1)}" r="4" class="dot"/></svg>`;
+}
+
+// 消耗品：同名的歸一組，算平均間隔
+function cycles(){
+  const g = {};
+  liveItems().filter(x => x.type === 'cons').forEach(x => { const k = x.name.trim(); (g[k] = g[k] || []).push(x); });
+  return Object.entries(g).map(([name, list]) => {
+    list.sort((a,b) => a.date.localeCompare(b.date));
+    const last = list[list.length-1], avgPrice = list.reduce((s,x) => s + x.price, 0) / list.length;
+    if (list.length < 2) return {name, n:1, last, avgPrice};
+    const span = daysBetween(list[0].date, last.date);
+    const avg = Math.max(1, span / (list.length - 1));
+    const next = addDays(last.date, r0(avg));
+    return {name, n:list.length, last, avgPrice, avg, next, left:daysBetween(TODAY, next), year:avgPrice * 365 / avg};
+  }).sort((a,b) => (a.left ?? 1e9) - (b.left ?? 1e9));
+}
+
+// 一個月的花費：飲食有填金額的 + 那個月買的物品
+function monthStats(ym){
+  let food = 0, snack = 0;
+  Object.keys(days).filter(k => k.startsWith(ym)).forEach(k => (days[k].food || []).forEach(f => { food += N0(f.cost); if (f.snack) snack += N0(f.cost); }));
+  const goods = liveItems().filter(x => x.date.startsWith(ym)).reduce((s,x) => s + x.price, 0);
+  return {food, snack, goods, total: food + goods};
+}
+function monthChart(endYm){
+  const ms = []; for (let i = 5; i >= 0; i--) { const ym = addMonths(endYm, -i); ms.push({ym, ...monthStats(ym)}); }
+  const max = Math.max(...ms.map(m => m.total));
+  if (!max) return '<div class="empty">還沒有花費紀錄。記一筆時填金額，或新增物品，這裡就會長出圖。</div>';
+  const W = 320, H = 150, top = 22, base = H - 22, bw = 30, gap = (W - 6*bw) / 6;
+  const hY = v => v / max * (base - top);
+  const bars = ms.map((m, i) => {
+    const x = gap/2 + i * (bw + gap), hf = hY(m.food), hg = hY(m.goods);
+    return `<g><rect x="${x.toFixed(1)}" y="${(base-hf).toFixed(1)}" width="${bw}" height="${hf.toFixed(1)}" class="bfood"/>
+      <rect x="${x.toFixed(1)}" y="${(base-hf-hg).toFixed(1)}" width="${bw}" height="${hg.toFixed(1)}" class="bgoods"/>
+      ${m.total ? `<text x="${(x+bw/2).toFixed(1)}" y="${(base-hf-hg-6).toFixed(1)}" text-anchor="middle" class="bv">${moneyShort(m.total)}</text>` : ''}
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-6}" text-anchor="middle" class="bl">${+m.ym.slice(5)} 月</text></g>`; }).join('');
+  return `<svg class="mchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="近六個月花費：${ms.map(m => `${+m.ym.slice(5)} 月 ${money(m.total)}`).join('、')}">
+    <line x1="0" y1="${base}" x2="${W}" y2="${base}" class="ax"/>${bars}</svg>
+    <div class="legend"><span><i class="lf"></i>飲食</span><span><i class="lg"></i>物品</span></div>`;
+}
+
+function reviewCard(x){
+  const d = daysBetween(x.date, TODAY);
+  return `<div class="rvcard" data-rid="${esc(x.id)}">
+    <div class="rvhead">30 天回顧</div>
+    <div class="rvq">${d <= 45 ? '一個月前' : fullDate(x.date) + ' '}買的 <b>${esc(x.name)} ${money(x.price)}</b>，用起來值得嗎？</div>
+    <div class="rvopts" role="group" aria-label="值不值得">${REVIEWS.map(([k,l]) => `<button type="button" class="btn rvopt${k==='regret'?' rvregret':''}" data-rv="${k}" aria-pressed="false">${l}</button>`).join('')}</div>
+    <label class="field">備註（選填）<textarea rows="2" maxlength="200" placeholder="例：比想像中好用／買了其實很少用"></textarea></label>
+    <div class="inline"><button type="button" class="btn primary" data-rvsave>記下來</button><button type="button" class="btn ghost" data-rvskip>這件不用問了</button><span class="note rvmsg" role="status"></span></div>
+  </div>`;
+}
+function bindReview(root, after){
+  root.querySelectorAll('.rvcard').forEach(card => {
+    const id = card.dataset.rid; let pick = null;
+    const msg = card.querySelector('.rvmsg');
+    card.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => {
+      pick = b.dataset.rv; card.querySelectorAll('[data-rv]').forEach(x => x.setAttribute('aria-pressed', x === b)); msg.textContent = ''; });
+    card.querySelector('[data-rvsave]').onclick = () => {
+      if (!pick) { msg.className = 'note warn rvmsg'; msg.textContent = '先選值得、普通或後悔。'; return; }
+      const it = items.find(x => x.id === id); if (!it) return;
+      saveItem({...it, review:{v:pick, note:card.querySelector('textarea').value.trim().slice(0,200), at:TODAY}});
+      toast(pick === 'regret' ? `${it.name} 放進後悔清單了。下次想買類似的東西，先翻一下這張清單。`
+        : pick === 'good' ? `${it.name}：值得。好東西就多用幾次，每天的成本會一直往下掉。` : `${it.name}：普通。記下來了。`);
+      after(); };
+    card.querySelector('[data-rvskip]').onclick = () => { const it = items.find(x => x.id === id); if (!it) return; saveItem({...it, ask:false}); after(); };
+  });
+}
+
+/* 首頁的花費卡 */
+function renderSpend(){
+  const ym = sel.slice(0,7), m = monthStats(ym);
+  const label = ym === TODAY.slice(0,7) ? '本月' : `${+ym.slice(5)} 月`;
+  $('#spendSum').textContent = m.total ? `${label} ${money(m.total)}` : '';
+  $('#spendLine').textContent = m.total
+    ? `飲食 ${money(m.food)}${m.snack ? `（零食 ${money(m.snack)}）` : ''} · 物品 ${money(m.goods)}`
+    : `${label}還沒有花費紀錄。記一筆時順手填金額，買東西就新增物品。`;
+  const due = dueReviews();
+  $('#spendReview').innerHTML = due.length ? reviewCard(due[0]) + (due.length > 1 ? `<div class="note">還有 ${due.length - 1} 件等你回顧，在「物品與花費」裡。</div>` : '') : '';
+  bindReview($('#spendReview'), render);
+}
+
+/* 物品與花費 */
+function openItems(){
+  const live = liveItems(), year = TODAY.slice(0,4), due = dueReviews();
+  const big = live.filter(x => x.type === 'big').sort((a,b) => b.date.localeCompare(a.date));
+  const cyc = cycles();
+  // 今年各分類
+  const cats = {};
+  live.filter(x => x.date.startsWith(year)).forEach(x => { cats[x.cat] = (cats[x.cat] || 0) + x.price; });
+  let food = 0, snack = 0;
+  Object.keys(days).filter(k => k.startsWith(year)).forEach(k => (days[k].food || []).forEach(f => { food += N0(f.cost); if (f.snack) snack += N0(f.cost); }));
+  const rowsY = [...(food ? [['飲食', food, snack ? `其中零食 ${money(snack)}` : '']] : []), ...Object.entries(cats).map(([c,v]) => [c, v, ''])].sort((a,b) => b[1] - a[1]);
+  const maxY = Math.max(1, ...rowsY.map(r => r[1]));
+  const reviewed = live.filter(x => x.review);
+  const regret = reviewed.filter(x => x.review.v === 'regret').sort((a,b) => b.price - a.price);
+  const cnt = v => reviewed.filter(x => x.review.v === v).length;
+  const all = [...live].sort((a,b) => b.date.localeCompare(a.date) || N0(b._t) - N0(a._t));
+
+  openSheet(`
+    <div class="sechead"><h2>物品與花費</h2><button class="btn primary" id="iAdd">＋ 新增物品</button></div>
+    ${due.length ? `<div class="mlist">${due.map(reviewCard).join('')}</div>` : ''}
+    <div class="wsec"><h3>近六個月花費</h3>${monthChart(TODAY.slice(0,7))}</div>
+    <div class="wsec"><h3>${year} 年花在哪</h3>${rowsY.length ? rowsY.map(([c,v,sub]) => `<div class="yrow"><div class="t"><div>${esc(c)}${sub ? `<span class="m"> · ${sub}</span>` : ''}</div><div class="bar"><i style="width:${(v/maxY*100).toFixed(1)}%;background:var(--accent)"></i></div></div><span class="k num">${money(v)}</span></div>`).join('') : '<div class="empty">今年還沒有花費紀錄。</div>'}</div>
+    <div class="wsec"><h3>大件：每日成本</h3>${big.length ? big.map(x => { const c = dailyCost(x); return `<div class="bigcard">
+      <div class="sechead"><button type="button" class="linkish" data-edititem="${esc(x.id)}">${esc(x.name)}</button><span class="m num">${money(x.price)} · 已用 ${useLabel(c.used)}</span></div>
+      ${costCurve(x)}
+      <div class="sechead"><span class="note">現在每天</span><b class="big2 num">${money(c.now)}</b></div>
+      <div class="note">${c.used >= x.years * 365 ? `已經用滿預計的 ${x.years} 年，之後每多用一天都是賺到。` : `用滿 ${x.years} 年，會降到每天 ${money(c.plan)}。`}</div></div>`; }).join('') : '<div class="empty">新增物品時選「大件」，就會在這裡看到它每天花你多少錢。</div>'}</div>
+    <div class="wsec"><h3>消耗品：回購週期</h3>${cyc.length ? cyc.map(c => c.n < 2
+      ? `<div class="crow"><div class="t"><div>${esc(c.name)}</div><div class="m">買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)}）· 再買一次就算得出週期</div></div></div>`
+      : `<div class="crow"><div class="t"><div>${esc(c.name)}</div><div class="m">平均 ${r0(c.avg)} 天一次 · 一年約 ${money(c.year)}</div></div><span class="${c.left <= 7 ? 'due' : 'm num'}">${c.left < 0 ? `可能用完了（預計 ${mmdd(c.next)}）` : c.left <= 7 ? `約 ${mmdd(c.next)} 用完` : `還有 ${c.left} 天`}</span></div>`).join('')
+      : '<div class="empty">新增物品時選「消耗品」，同一個品名買第二次，就會算出多久買一次。</div>'}</div>
+    <div class="wsec"><h3>後悔清單</h3>
+      ${reviewed.length ? `<div class="m num">回顧過 ${reviewed.length} 件：值得 ${cnt('good')} · 普通 ${cnt('meh')} · 後悔 ${cnt('regret')}${regret.length ? ` · 後悔的共 ${money(regret.reduce((s,x) => s + x.price, 0))}` : ''}</div>` : ''}
+      ${regret.length ? regret.map(x => `<div class="crow"><div class="t"><button type="button" class="linkish" data-edititem="${esc(x.id)}">${esc(x.name)}</button><div class="m">${fullDate(x.date)} · ${esc(x.cat)}${x.review.note ? ` · ${esc(x.review.note)}` : ''}</div></div><span class="k num">${money(x.price)}</span></div>`).join('')
+        : `<div class="empty">${reviewed.length ? '目前沒有後悔的東西 👍' : '買滿 30 天的物品會問你值不值得，選「後悔」的會出現在這裡。'}</div>`}</div>
+    <div class="wsec"><h3>全部物品 <span class="m num">${all.length} 件</span></h3>
+      ${all.length ? all.map(x => `<div class="row"><button class="t" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="nm">${esc(x.name)}<span class="tag">${typeName(x.type)}</span>${x.review ? `<span class="tag${x.review.v === 'regret' ? ' avoid' : ''}">${reviewName(x.review.v)}</span>` : ''}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}</div></button><span class="k">${money(x.price)}</span></div>`).join('') : '<div class="empty">還沒有物品。</div>'}</div>
+    <button class="btn block" id="iClose">完成</button>
+  `, host => {
+    $('#iAdd').onclick = () => openItemForm(null, openItems);
+    $('#iClose').onclick = closeSheet;
+    bindReview(host, () => { openItems(); render(); });
+    host.querySelector('.sheet').scrollTop = 0;
+  });
+}
+
+/* 新增／修改物品 */
+function openItemForm(it, back){
+  const isNew = !it;
+  const x = it ? {...it} : {name:'', price:'', date:sel, type:'gen', cat:'', years:3, ask:true};
+  let type = x.type, cat = x.cat, years = x.years || 3, askTouched = !isNew, rv = x.review ? x.review.v : null;
+  const names = [...new Set(liveItems().map(i => i.name))].slice(0, 200);
+  openSheet(`
+    <h2>${isNew ? '新增物品' : '修改物品'}</h2>
+    <div class="field"><label for="iN">品名</label><input id="iN" maxlength="60" list="iNames" placeholder="例如 手機、洗髮精、外套" value="${esc(x.name)}" autocomplete="off">
+      <datalist id="iNames">${names.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist></div>
+    <div class="grid2">
+      <label>價格（元）<input id="iP" type="number" inputmode="numeric" min="0" max="9999999" step="1" value="${x.price === '' ? '' : x.price}"></label>
+      <label>購買日期<input id="iD" type="date" value="${x.date}" max="${TODAY}"></label>
+    </div>
+    <div class="field">類型<div class="tabs" id="iType" role="radiogroup" aria-label="類型">${ITEM_TYPES.map(([k,l]) => `<button type="button" role="radio" data-v="${k}" aria-selected="${k===type}" aria-checked="${k===type}">${l}</button>`).join('')}</div>
+      <span class="note" id="iTypeNote"></span></div>
+    <div class="field">分類<div class="seg" id="iCat">${ITEM_CATS.map(c => `<button type="button" data-v="${c}" aria-pressed="${c===cat}">${c}</button>`).join('')}</div></div>
+    <div class="bigbox" id="iBig">
+      <div class="sechead"><span>預計用幾年</span><div class="step"><button type="button" id="iYm" aria-label="減少一年">−</button><span id="iY"></span><button type="button" id="iYp" aria-label="增加一年">＋</button></div></div>
+      <div class="sechead"><span class="note" id="iYNote"></span><b class="big2 num" id="iPer"></b></div>
+    </div>
+    <label class="note asktoggle"><input id="iAsk" type="checkbox" ${x.ask ? 'checked' : ''}> 30 天後問我值不值得（只跳一題，點一下就好）</label>
+    ${!isNew && x.review ? `<div class="field">回顧<div class="seg" id="iRv">${REVIEWS.map(([k,l]) => `<button type="button" data-v="${k}" aria-pressed="${k===rv}">${l}</button>`).join('')}</div>
+      <label class="field">備註<textarea id="iRvNote" rows="2" maxlength="200">${esc(x.review.note || '')}</textarea></label></div>` : ''}
+    <div class="note" id="iMsg" role="status"></div>
+    <div class="btnrow"><button class="btn primary" id="iSave">${isNew ? '記下來' : '儲存'}</button><button class="btn ghost" id="iBack">取消</button>${isNew ? '' : '<button class="btn ghost danger" id="iDel">刪除</button>'}</div>
+  `, () => {
+    const price = () => +$('#iP').value || 0;
+    const showBig = () => {
+      $('#iBig').hidden = type !== 'big';
+      $('#iY').textContent = years + ' 年';
+      $('#iYNote').textContent = `用滿 ${years} 年，每天約`;
+      $('#iPer').textContent = price() ? money(price() / (years * 365)) : '—';
+      $('#iTypeNote').textContent = type === 'big' ? '用很久的東西：手機、電腦、家電、包包。' : type === 'cons' ? '會用完再買的：洗髮精、保養品、衛生紙、貓砂。同一個品名，下次才算得出週期。' : '其他一次性的東西。';
+    };
+    $('#iType').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; type = b.dataset.v;
+      $('#iType').querySelectorAll('button').forEach(z => { z.setAttribute('aria-selected', z === b); z.setAttribute('aria-checked', z === b); });
+      if (!askTouched) $('#iAsk').checked = type !== 'cons';
+      showBig(); });
+    $('#iCat').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cat = b.dataset.v;
+      $('#iCat').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); });
+    $('#iRv') && $('#iRv').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; rv = b.dataset.v;
+      $('#iRv').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); });
+    $('#iYm').onclick = () => { years = Math.max(1, years - 1); showBig(); };
+    $('#iYp').onclick = () => { years = Math.min(30, years + 1); showBig(); };
+    $('#iP').oninput = showBig;
+    $('#iAsk').onchange = () => { askTouched = true; };
+    // 同名消耗品：帶入上次的分類和價格
+    $('#iN').onchange = () => { if (!isNew) return; const prev = liveItems().filter(i => i.name === $('#iN').value.trim()).sort((a,b) => b.date.localeCompare(a.date))[0];
+      if (!prev) return;
+      if (!cat) { cat = prev.cat; $('#iCat').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z.dataset.v === cat)); }
+      if (!$('#iP').value) $('#iP').value = prev.price;
+      if (type !== prev.type) { const b = $(`#iType [data-v="${prev.type}"]`); b && b.click(); }
+      showBig(); };
+    const goBack = () => back ? back() : closeSheet();
+    $('#iBack').onclick = goBack;
+    let armed = false;
+    $('#iDel') && ($('#iDel').onclick = () => {
+      if (!armed) { armed = true; $('#iDel').textContent = '再按一次確認刪除'; return; }
+      saveItem({...it, del:true}); render(); toast(`已刪除 ${it.name}。`); goBack(); });
+    $('#iSave').onclick = () => {
+      const msg = t => { $('#iMsg').className = 'note warn'; $('#iMsg').textContent = t; };
+      const name = $('#iN').value.trim(), pIn = $('#iP').value.trim(), p = Math.round(+pIn), date = $('#iD').value;
+      if (!name) return msg('請填品名。');
+      if (pIn === '' || !(p >= 0 && p <= 9999999)) return msg('請填價格（0～9,999,999 元）。');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > TODAY) return msg('請選購買日期（不能是未來）。');
+      if (!cat) return msg('請選一個分類。');
+      const out = {id: isNew ? newId() + newId() : it.id, name, price:p, date, type, cat};
+      if (type === 'big') out.years = years;
+      if ($('#iAsk').checked) out.ask = true;
+      if (!isNew && x.review && rv) out.review = {v:rv, note:($('#iRvNote') ? $('#iRvNote').value.trim().slice(0,200) : x.review.note || ''), at:x.review.at || TODAY};
+      saveItem(out); render();
+      let t;
+      if (!isNew) t = `${name} 已更新。`;
+      else if (type === 'big') t = `${name} 記好了。用滿 ${years} 年，每天約 ${money(p / (years * 365))}。`;
+      else if (type === 'cons') { const c = cycles().find(z => z.name === name); t = c && c.n >= 2 ? `${name} 記好了，平均 ${r0(c.avg)} 天買一次，一年約 ${money(c.year)}。` : `${name} 記好了。下次再買，就算得出多久買一次。`; }
+      else t = `${name} 記好了${out.ask ? '，30 天後問你值不值得' : ''}。`;
+      toast(t); goBack(); };
+    showBig();
   });
 }
 
@@ -1812,17 +2150,26 @@ $('#bkJson').onclick = () => {
   if (!profile) return;
   const out = {app:'每日食帳', version:1, exportedAt:new Date().toISOString(), profile, days:{}};
   Object.keys(days).sort().forEach(k => { if (hasData(k)) out.days[k] = days[k]; });
+  out.items = items;
   saveFile(`每日食帳備份-${stamp()}.json`, JSON.stringify(out, null, 1), 'application/json');
 };
 $('#bkCsv').onclick = () => {
   const q = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g,'""') + '"' : t; };
   const ml = Object.fromEntries(MEALS);
-  const rows = [['日期','餐別','品名','熱量 kcal','蛋白質 g','碳水 g','脂肪 g','添加糖 g','纖維 g','鈉 mg','當日飲水 ml','當日體重 kg']];
+  const rows = [['日期','餐別','品名','熱量 kcal','蛋白質 g','碳水 g','脂肪 g','添加糖 g','纖維 g','鈉 mg','金額 元','零食','當日飲水 ml','當日體重 kg']];
   Object.keys(days).sort().forEach(k => { const d = days[k];
-    if (!d.food.length && (d.water || d.weight)) rows.push([k,'','','','','','','','','',d.water||'',d.weight||'']);
-    d.food.forEach((f,i) => rows.push([k, ml[f.meal]||'', f.name, f.k, f.p, f.c, f.f, N0(f.s), N0(f.fb), N0(f.na), i===0?(d.water||''):'', i===0?(d.weight||''):''])); });
+    if (!d.food.length && (d.water || d.weight)) rows.push([k,'','','','','','','','','','','',d.water||'',d.weight||'']);
+    d.food.forEach((f,i) => rows.push([k, ml[f.meal]||'', f.name, f.k, f.p, f.c, f.f, N0(f.s), N0(f.fb), N0(f.na), N0(f.cost)||'', f.snack?'是':'', i===0?(d.water||''):'', i===0?(d.weight||''):''])); });
   if (rows.length === 1) { bkMsg('還沒有紀錄可以匯出。', true); return; }
   saveFile(`每日食帳-${stamp()}.csv`, '﻿' + rows.map(r => r.map(q).join(',')).join('\r\n'));
+};
+$('#bkItemsCsv').onclick = () => {
+  const q = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g,'""') + '"' : t; };
+  const live = liveItems().sort((a,b) => a.date.localeCompare(b.date));
+  if (!live.length) { bkMsg('還沒有物品可以匯出。', true); return; }
+  const rows = [['購買日期','品名','價格 元','類型','分類','預計年限','回顧','回顧備註']].concat(
+    live.map(x => [x.date, x.name, x.price, typeName(x.type), x.cat, x.years || '', x.review ? reviewName(x.review.v) : '', x.review ? x.review.note : '']));
+  saveFile(`物品清單-${stamp()}.csv`, '\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n'), 'text/csv');
 };
 // 匯入：檔案裡有的日期會覆蓋，沒有的日期保留
 let pendingImport = null;
@@ -1839,22 +2186,24 @@ $('#bkFile').onchange = () => {
       if (!o || o.app !== '每日食帳' || typeof o.days !== 'object') throw 0;
       const ks = Object.keys(o.days).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && o.days[k] && Array.isArray(o.days[k].food));
       const clash = ks.filter(k => hasData(k)).length;
+      const nItems = Array.isArray(o.items) ? o.items.filter(x => x && !x.del).length : 0;
       // 全新裝置、還沒有任何資料：不必再確認，直接匯入
       if (!profile && !Object.keys(days).some(hasData)) { pendingImport = null; applyImport({o, ks}); return; }
       pendingImport = {o, ks};
       $('#bkImportBtn').textContent = `確認匯入 ${ks.length} 天`;
       $('#backupCard').scrollIntoView({behavior:'smooth', block:'center'});
-      bkMsg(`檔案有 ${ks.length} 天紀錄${clash ? `，其中 ${clash} 天和現有紀錄重疊，會以檔案為準` : ''}。再按一次「確認匯入」才會寫入。`, !!clash);
+      bkMsg(`檔案有 ${ks.length} 天紀錄${nItems ? `、${nItems} 件物品` : ''}${clash ? `，其中 ${clash} 天和現有紀錄重疊，會以檔案為準` : ''}。再按一次「確認匯入」才會寫入。`, !!clash);
     } catch { pendingImport = null; bkMsg('這不是每日食帳的備份檔，請選「匯出備份」產生的 .json 檔。', true); }
   };
   rd.readAsText(file);
 };
 function applyImport({o, ks}){
   ks.forEach(k => { const d = o.days[k];
-    days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s'})),
+    days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s', ...(N0(f.cost)>0?{cost:r0(N0(f.cost))}:{}), ...(f.snack?{snack:true}:{})})),
       water:N0(d.water), waterLog:Array.isArray(d.waterLog)?d.waterLog.filter(x=>x&&N0(x.ml)>0).map(x=>({ml:N0(x.ml), t:N0(x.t), ...(x.old?{old:true}:{})})):undefined, ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null,
       supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined};
     saveDay(k); });
+  if (Array.isArray(o.items)) { mergeItems(o.items.map(cleanItem).filter(Boolean)); lsSave(); markDirty(); }
   if (o.profile && typeof o.profile === 'object') {
     const keep = profile || {};
     profile = {...o.profile, nick: keep.nick || o.profile.nick || ''};
