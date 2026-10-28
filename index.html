@@ -84,6 +84,7 @@ header h1 small{display:block;margin:2px 0 0;font-weight:500;font-size:12px;colo
 .ring .val{stroke:var(--accent);transition:stroke-dashoffset .5s ease}
 .ring .val.over{stroke:var(--warn)}
 .chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+#tdeeNotice{grid-column:1/-1;margin:0}
 .chip{font-size:12px;background:var(--sunk);border-radius:999px;padding:3px 10px;color:var(--muted)}
 .chip b{font-family:var(--num);color:var(--ink);font-weight:600}
 
@@ -289,6 +290,7 @@ button.chip{border:0;font:inherit}
       <circle class="val" id="ringVal" cx="60" cy="60" r="50" transform="rotate(-90 60 60)" stroke-dasharray="314.16" stroke-dashoffset="314.16"/>
     </svg>
     <div class="chips" id="chips"></div>
+    <div class="note warn" id="tdeeNotice" hidden></div>
   </div>
   <div class="macros" id="macros"></div>
   <div class="macros" id="micros"></div>
@@ -613,7 +615,7 @@ function calc(date){
   const exHours = d.ex.reduce((s,e) => s + e.min/60, 0);
   const floor = Math.max(bmr, 1200);
   const base = Math.max(tdee * (1 - profile.deficit), floor);
-  const target = base + exNet;
+  const target = base; // D1：運動估算消耗只顯示、不加進可吃額度；實測 TDEE 已包含訓練效果
   const pT = profile.pkg * W, fT = target * 0.25 / 9, cT = Math.max(0, (target - pT*4 - fT*9) / 4);
   const eat = d.food.reduce((s,f) => ({k:s.k+f.k, p:s.p+f.p, c:s.c+f.c, f:s.f+f.f, s:s.s+N0(f.s), fb:s.fb+N0(f.fb), na:s.na+N0(f.na)}), {k:0,p:0,c:0,f:0,s:0,fb:0,na:0});
   const waterT = 1600 + 500 * exHours;
@@ -647,7 +649,7 @@ function render(){
   $('#chips').innerHTML =
     `<button class="chip" data-explain="bmr">BMR <b>${r0(R.bmr)}</b></button>` +
     `<button class="chip" data-explain="tdee">TDEE <b>${r0(R.tdee)}</b>${profile.tdeeOverride?'（實測）':''}</button>` +
-    (R.exNet ? `<button class="chip" data-explain="ex">運動 <b>+${r0(R.exNet)}</b></button>` : '') +
+    (R.exNet ? `<button class="chip" data-explain="ex">運動約 <b>${r0(R.exNet)}</b> kcal（參考）</button>` : '') +
     (R.floorHit ? `<button class="chip" data-explain="target">已套用下限</button>` : '');
   const m = (key, name, eat, tgt, col, kcalPer) => {
     const pct = e.k ? r0(eat*kcalPer / e.k * 100) : 0;
@@ -699,33 +701,50 @@ function render(){
   $('#wtSum').textContent = d.weight ? `${d.weight} kg` : `目前以 ${R.W} kg 計算`;
   $('#wtIn').value = d.weight || '';
   renderCalib(R);
+  renderTdeeNotice(R);
   renderGrade();
   renderWeekCard();
   renderSpend();
 }
 
-function renderCalib(R){
+// 實測校正：近 28 天平均攝取 − 體重斜率 × 7,700。D1 後不再扣運動，回推值直接代表含訓練的總消耗
+function calibData(){
   const end = TODAY, start = addDays(end, -27);
   const keys = Object.keys(days).filter(k => k >= start && k <= end);
   const intakeDays = keys.filter(k => days[k].food.length);
-  const wts = keys.filter(k => days[k].weight).map(k => [ (parseYmd(k)-parseYmd(start))/864e5, days[k].weight ]);
+  const wts = keys.filter(k => days[k].weight).sort().map(k => [ (parseYmd(k)-parseYmd(start))/864e5, days[k].weight ]);
   const span = wts.length ? wts[wts.length-1][0] - wts[0][0] : 0;
+  if (intakeDays.length < 14 || wts.length < 4 || span < 10) return {ok:false, nIn:intakeDays.length, nW:wts.length};
+  const n = wts.length, mx = wts.reduce((s,w)=>s+w[0],0)/n, my = wts.reduce((s,w)=>s+w[1],0)/n;
+  const slope = wts.reduce((s,w)=>s+(w[0]-mx)*(w[1]-my),0) / wts.reduce((s,w)=>s+(w[0]-mx)**2,0);
+  const avgIn = intakeDays.reduce((s,k)=>s+days[k].food.reduce((a,f)=>a+f.k,0),0) / intakeDays.length;
+  return {ok:true, slope, avgIn, obs: avgIn - slope*7700};
+}
+function renderCalib(R){
+  const C = calibData();
   let h;
-  if (intakeDays.length < 14 || wts.length < 4 || span < 10) {
-    h = `<div class="note">實測校正：近 28 天需有 ≥14 天飲食紀錄、≥4 次體重（跨 10 天以上）。目前 ${intakeDays.length} 天飲食、${wts.length} 次體重。</div>`;
+  if (!C.ok) {
+    h = `<div class="note">實測校正：近 28 天需有 ≥14 天飲食紀錄、≥4 次體重（跨 10 天以上）。目前 ${C.nIn} 天飲食、${C.nW} 次體重。</div>`;
   } else {
-    const n = wts.length, mx = wts.reduce((s,w)=>s+w[0],0)/n, my = wts.reduce((s,w)=>s+w[1],0)/n;
-    const slope = wts.reduce((s,w)=>s+(w[0]-mx)*(w[1]-my),0) / wts.reduce((s,w)=>s+(w[0]-mx)**2,0);
-    const avgIn = intakeDays.reduce((s,k)=>s+days[k].food.reduce((a,f)=>a+f.k,0),0) / intakeDays.length;
-    const avgEx = intakeDays.reduce((s,k)=>{ const W=R.W; return s+days[k].ex.reduce((a,e)=>a+(e.met-1)*W*e.min/60,0); },0)/intakeDays.length;
-    const obs = avgIn - slope*7700 - avgEx;
+    const {slope, avgIn, obs} = C;
     const diff = (obs - R.tdeeFormula) / R.tdeeFormula;
     h = `<div>體重趨勢 <b class="num">${slope>=0?'+':''}${r1(slope*7)}</b> kg／週；平均攝取 <b class="num">${r0(avgIn)}</b> kcal</div>
-      <div>回推日常消耗約 <b class="num">${r0(obs)}</b> kcal（公式 ${r0(R.tdeeFormula)}，差 ${r0(diff*100)}%）</div>
+      <div>回推每日總消耗約 <b class="num">${r0(obs)}</b> kcal（含運動；公式 ${r0(R.tdeeFormula)}，差 ${r0(diff*100)}%）</div>
       ${Math.abs(diff) > 0.10 ? '<div class="note warn">差距超過 10%，可考慮改用實測值。紀錄若有漏記，實測值會偏低。</div>' : '<div class="note">與公式差距在 10% 內。</div>'}
       <div class="btnrow">${profile.tdeeOverride ? '<button class="btn" id="calOff">改回公式值</button>' : ''}<button class="btn" id="calOn" data-v="${r0(obs)}">採用 ${r0(obs)} kcal</button></div>`;
   }
   $('#calib').innerHTML = h;
+}
+const TDEE_VER = 2; // 2＝D1 後的實測公式（不扣運動）
+function renderTdeeNotice(R){
+  const el = $('#tdeeNotice');
+  const need = profile.tdeeOverride && profile.tdeeVer !== TDEE_VER;
+  el.hidden = !need; if (!need) { el.innerHTML = ''; return; }
+  const C = calibData();
+  el.innerHTML = `計算方式已更新：運動消耗不再加進可吃額度，實測 TDEE 也不再扣掉運動。你目前採用的 ${r0(profile.tdeeOverride)} kcal 是舊算法，通常偏低，建議重新校正。`
+    + (C.ok ? '' : `<br>近 28 天紀錄還不夠重算（需 ≥14 天飲食、≥4 次體重），可以先改回公式值，等紀錄夠了再校正。`)
+    + `<div class="btnrow">${C.ok ? `<button class="btn primary" id="tnNew" data-v="${r0(C.obs)}">採用新值 ${r0(C.obs)} kcal</button>` : ''}`
+    + `<button class="btn" id="tnFormula">改回公式值 ${r0(R.tdeeFormula)} kcal</button><button class="btn ghost" id="tnKeep">先保留</button></div>`;
 }
 
 /* ---------- events ---------- */
@@ -739,8 +758,9 @@ document.addEventListener('click', ev => {
   else if (t.dataset.edititem){ const it = items.find(x => x.id === t.dataset.edititem && !x.del); if (it) openItemForm(it, openItems); }
   else if (t.dataset.delfood !== undefined){ removeFood(+t.dataset.delfood); }
   else if (t.dataset.delex !== undefined){ dayOf(sel).ex.splice(+t.dataset.delex,1); saveDay(sel); render(); }
-  else if (t.id === 'calOn'){ profile.tdeeOverride = +t.dataset.v; saveProfile(); render(); }
-  else if (t.id === 'calOff'){ delete profile.tdeeOverride; saveProfile(); render(); }
+  else if (t.id === 'calOn' || t.id === 'tnNew'){ profile.tdeeOverride = +t.dataset.v; profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
+  else if (t.id === 'calOff' || t.id === 'tnFormula'){ delete profile.tdeeOverride; profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
+  else if (t.id === 'tnKeep'){ profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
 });
 $('#exType').innerHTML = METS.map(([n,m],i)=>`<option value="${i}">${n}（${m}）</option>`).join('');
 $('#exAdd').onclick = () => {
@@ -1057,7 +1077,7 @@ function waterComment(before, after, cups, ml){
    蛋白質 25、飲食品質 15（脂肪／鈉／添加糖各 5）、飲水 10
    三正餐紀錄 8＋運動 2、補給品 5（沒設定補給品的人直接給滿）
    當天結束（午夜）後鎖定；之後補登會顯示「補登後 B→C」 */
-const GRADE_VER = 2;
+const GRADE_VER = 3; // 3＝D1 後熱量目標不含運動。舊版鎖定的分數保留不覆寫，畫面標「舊制」
 const clamp01 = x => Math.max(0, Math.min(1, x));
 const letter = s => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : s >= 50 ? 'E' : 'F';
 function gradeDay(date){
@@ -1068,7 +1088,7 @@ function gradeDay(date){
   // 熱量
   let effDev;
   if (e.k <= R.target) effDev = (R.target - e.k) / R.target;
-  else { const over = e.k - R.target, toTdee = Math.max(0, R.tdee + R.exNet - R.target);
+  else { const over = e.k - R.target, toTdee = Math.max(0, R.tdee - R.target);
     effDev = (Math.min(over, toTdee) * 0.5 + Math.max(0, over - toTdee)) / R.target; }
   const sK = r1(35 * clamp01(1 - Math.max(0, effDev - 0.05) / 0.30));
   const sP = r1(25 * clamp01(e.p / R.pT));
@@ -1091,7 +1111,7 @@ function gradeDay(date){
   const qWorst = [['脂肪', qF], ['鈉', qN], ['糖', qS]].sort((a,b) => a[1]-b[1])[0][0];
   const missing = [['b','早餐'],['l','午餐'],['d','晚餐']].filter(([m]) => !d.food.some(f => f.meal === m)).map(x => x[1]);
   const fix = {
-    '熱量': e.k > R.target ? `熱量超了 ${r0(e.k-R.target)} kcal${e.k <= R.tdee + R.exNet ? '（還在維持量內，不會胖）' : ''}，${nT}正餐固定、點心先記再吃。` : `熱量比目標少 ${r0(R.target-e.k)} kcal，吃太少會拖累肌肉，${nT}補足。`,
+    '熱量': e.k > R.target ? `熱量超了 ${r0(e.k-R.target)} kcal${e.k <= R.tdee ? '（還在維持量內，不會胖）' : ''}，${nT}正餐固定、點心先記再吃。` : `熱量比目標少 ${r0(R.target-e.k)} kcal，吃太少會拖累肌肉，${nT}補足。`,
     '蛋白質': `蛋白質只到 ${r0(e.p)}/${r0(R.pT)} g，${nT}每餐先放一份豆魚蛋肉。`,
     '品質': {'脂肪': `脂肪佔熱量 ${r0(fatPct*100)}%，${nT}主菜選烤、滷、蒸，青菜要燙的。`, '鈉': `鈉 ${r0(e.na).toLocaleString()} mg，${nT}湯少喝、醬汁分開放。`, '糖': `添加糖 ${r0(e.s)} g，${nT}飲料改微糖或無糖。`}[qWorst],
     '飲水': `水只喝了 ${d.water} ml，${nT}桌上放一瓶，看到就喝。`,
@@ -1113,7 +1133,7 @@ function gradeDay(date){
 // 過完的日子：第一次看到時把分數存下來（鎖定），之後補登會並列顯示
 function lockedGrade(date){
   const d = days[date]; if (!d) return null;
-  if (d.grade && d.grade.v === GRADE_VER) return d.grade;
+  if (d.grade) return d.grade; // 任何版本的鎖定都保留；版本較舊者由畫面標「舊制」
   if (date >= TODAY) return null;
   const G = gradeDay(date); if (!G) return null;
   d.grade = {v:GRADE_VER, g:G.g, score:G.score}; saveDay(date);
@@ -1129,8 +1149,10 @@ function renderGrade(){
   $('#gLetter').textContent = G.g;
   $('#gLetter').className = 'gletter num g' + G.g;
   $('#gWas').hidden = !changed;
-  $('#gWas').textContent = changed ? `結算時 ${L.g}` : '';
+  const old = changed && L.v < GRADE_VER; // 分數不同是因為計分方式更新，不是補登
+  $('#gWas').textContent = changed ? (old ? `舊制 ${L.g}` : `結算時 ${L.g}`) : '';
   $('#gLabel').textContent = sel === TODAY ? `今日暫評 · ${G.score} 分（午夜結算）`
+    : old ? `${sel} ${G.score} 分 · 舊制 ${L.g}（${L.score} 分，計分方式已更新）`
     : changed ? `${sel} 補登後 ${G.score} 分 · 結算時 ${L.g}（${L.score} 分）` : `${sel} 結算 · ${G.score} 分`;
   $('#gComment').textContent = G.comment;
   $('#gParts').innerHTML = [['熱量',G.sK,35],['蛋白質',G.sP,25],['品質',G.sQ,15],['飲水',G.sW,10],['紀錄',G.sL,10],['補給品',G.sS,5]]
@@ -1473,20 +1495,20 @@ function explain(key){
       res:`${n0(R.tdee)} kcal`,
       body:[profile.tdeeOverride ? `你已採用實測值，公式估計是 ${n0(R.tdeeFormula)} kcal。實測值反映你真實的身體，比公式可靠，前提是紀錄沒有漏記。`
         : `活動係數依 FAO/WHO/UNU 分級，1.40 是久坐生活的下緣。市面常見的 1.2 低於這個區間，容易把需求算太低。`,
-        '運動不包含在這裡，運動當天另外加，避免重複計算。'],
+        profile.tdeeOverride ? '實測值由體重趨勢回推，已經包含你平常的運動，所以運動消耗不再另外加。' : '公式值不含刻意運動；但可吃額度不會再加回運動估算，規律運動的效果交給實測校正反映。'],
       src:['pal']
     },
     target: {
-      eb:'目標熱量', t:'今天可以吃多少', lead:'每日消耗扣掉減重赤字，再加回運動',
-      tag:`赤字 ${pdef}%`, f:`TDEE ${n0(R.tdee)} × (1 − ${pdef}%) = ${n0(R.tdee*(1-profile.deficit))}\n下限 max(BMR, 1,200) = ${n0(R.floor)}\n${n0(R.base)} + 運動 ${n0(R.exNet)}`, res:`${n0(R.target)} kcal`,
+      eb:'目標熱量', t:'今天可以吃多少', lead:'每日消耗扣掉減重赤字，運動不另外加',
+      tag:`赤字 ${pdef}%`, f:`TDEE ${n0(R.tdee)} × (1 − ${pdef}%) = ${n0(R.tdee*(1-profile.deficit))}\n下限 max(BMR, 1,200) = ${n0(R.floor)}`, res:`${n0(R.target)} kcal`,
       body:[R.floorHit ? '赤字算出來低於下限，所以今天用下限。吃得比基礎代謝還少，掉的會有更多是肌肉。' : '用百分比而不是固定減 500 kcal，因為體重越輕消耗越少，固定數字會讓赤字越來越大。',
         '體重對熱量變化反應很慢，看兩週以上的趨勢，不要看單日體重。'],
       src:['hall','guide']
     },
     ex: {
-      eb:'運動', t:'運動多燒的熱量', lead:'只算比靜坐多出來的部分',
-      tag:'MET 淨消耗', f:`(MET − 1) × 體重 ${W} kg × 時數`, res:`今天 +${n0(R.exNet)} kcal`,
-      body:['減 1 是扣掉本來就算在 TDEE 裡的靜止消耗，不然會重複計算。',
+      eb:'運動', t:'運動多燒的熱量（參考）', lead:'只顯示，不加進可吃額度',
+      tag:'MET 淨消耗', f:`(MET − 1) × 體重 ${W} kg × 時數`, res:`今天約 ${n0(R.exNet)} kcal`,
+      body:['手錶或 MET 估算的誤差常達 ±30%，加進額度容易越吃越多。所以這個數字只給你參考，不會讓你多吃；運動真正多燒的熱量，會透過體重趨勢反映在實測 TDEE 裡。', '減 1 是扣掉本來就算在 TDEE 裡的靜止消耗，不然會重複計算。',
         'MET 是群體平均值，個人差異可以到 ±20%。重訓的組間休息也算在時間裡，數字會比感覺少，這是正常的。'],
       src:['comp']
     },
@@ -1604,7 +1626,7 @@ function swapFor(kind, name){ const hit = SWAPS[kind].find(([kws]) => kws.some(k
 function weekData(ws){
   const keys = Array.from({length:7}, (_, i) => addDays(ws, i));
   const logged = keys.filter(k => days[k] && days[k].food.length);
-  const rows = logged.map(k => { const R = calc(k), d = days[k], G = gradeDay(k), L = k < TODAY ? (d.grade && d.grade.v === GRADE_VER ? d.grade : null) : null;
+  const rows = logged.map(k => { const R = calc(k), d = days[k], G = gradeDay(k), L = k < TODAY ? (d.grade || null) : null;
     return {k, R, e:R.eat, d, G, L, dow: parseYmd(k).getDay()}; });
   const avg = f => rows.length ? rows.reduce((a, r) => a + f(r), 0) / rows.length : 0;
   const agg = kind => { const m = {}; rows.forEach(r => r.d.food.forEach(f => { const v = N0(f[kind]); if (!v) return;
@@ -1615,8 +1637,8 @@ function weekData(ws){
 function weekReview(ws){
   const W = weekData(ws), rows = W.rows, n = rows.length;
   if (!n) return null;
-  const avgK = W.avg(r => r.e.k), avgT = W.avg(r => r.R.tdee + r.R.exNet), avgTarget = W.avg(r => r.R.target);
-  const deficit = avgT - avgK, planned = W.avg(r => r.R.tdee + r.R.exNet - r.R.target);
+  const avgK = W.avg(r => r.e.k), avgT = W.avg(r => r.R.tdee), avgTarget = W.avg(r => r.R.target);
+  const deficit = avgT - avgK, planned = W.avg(r => r.R.tdee - r.R.target);
   const avgP = W.avg(r => r.e.p), pT = W.avg(r => r.R.pT), pDays = rows.filter(r => r.e.p >= r.R.pT * 0.95).length;
   const avgF = W.avg(r => r.e.f), fT = W.avg(r => r.R.fT), fatPct = W.avg(r => r.e.k ? r.e.f*9/r.e.k : 0);
   const fatDays = rows.filter(r => r.e.k && r.e.f*9/r.e.k > 0.30).length;
@@ -1687,7 +1709,7 @@ function weekReview(ws){
       : gl.type === 'fb' ? r.e.fb >= gl.v : gl.type === 'p' ? r.e.p >= gl.v : gl.type === 'k' ? r.e.k <= gl.v : false).length;
     return {...gl, ok, n};
   });
-  const grades = rows.map(r => ({k:r.k, g:r.G.g, score:r.G.score, was: r.L && r.L.score !== r.G.score ? r.L.g : ''}));
+  const grades = rows.map(r => ({k:r.k, g:r.G.g, score:r.G.score, was: r.L && r.L.score !== r.G.score ? r.L.g : '', old: !!(r.L && r.L.v < GRADE_VER)}));
   return {ws, n, rows, avgK, avgT, deficit, planned, avgP, avgF, fatPct, avgFb, verdict, good, top, pattern, notes, goalCheck, grades,
     nextGoals: top.map(t => ({type:t.goal.type, v:t.goal.v, text:t.goal.text(t.goal.v)}))};
 }
@@ -1700,7 +1722,7 @@ function openWeek(ws){
     <button class="btn ghost" id="wkNext"${nextWs > TODAY ? ' disabled' : ''}>下一週 ›</button></div>`;
   const body = !V ? '<div class="empty">這週還沒有飲食紀錄。</div>' : `
     <div class="wsec"><h3>① 一句話結論</h3><p>${esc(V.verdict)}</p>
-      <div class="gstrip">${V.grades.map(x => `<span class="gpill g${x.g}"><b>${x.was ? x.was + '→' : ''}${x.g}</b>${mmdd(x.k)}</span>`).join('')}</div></div>
+      <div class="gstrip">${V.grades.map(x => `<span class="gpill g${x.g}"><b>${x.was ? (x.old ? '舊' : '') + x.was + '→' : ''}${x.g}</b>${mmdd(x.k)}</span>`).join('')}</div></div>
     ${V.goalCheck.length ? `<div class="wsec"><h3>上週定的目標</h3>${V.goalCheck.map(gl => `<p>${gl.ok >= Math.ceil(gl.n*0.7) ? '✅' : '◻️'} ${esc(gl.text)}：達成 ${gl.ok}/${gl.n} 天</p>`).join('')}</div>` : ''}
     ${V.good.length ? `<div class="wsec"><h3>② 做得好的，繼續保持</h3>${V.good.map(x => `<p>👍 ${esc(x)}</p>`).join('')}</div>` : ''}
     ${V.top.map((t, i) => `<div class="wsec"><h3>${i === 0 ? '③ 最該調整的一件事' : '④ 第二件事'}：${t.title}</h3><p>${esc(t.stat)}</p>
@@ -1762,12 +1784,12 @@ function aiText(ws, V, withBody){
   L.push('## 我的基本設定');
   if (withBody) L.push(`- ${profile.sex === 'm' ? '男' : '女'}性，${profile.age} 歲，身高 ${profile.height} cm，目前體重 ${R0.W} kg${profile.bf ? `，體脂率 ${profile.bf}%` : ''}`);
   L.push(`- 目標：減脂（熱量赤字 ${Math.round(profile.deficit*100)}%），日常活動係數 ${profile.pal}`);
-  L.push(`- 每日目標：熱量約 ${r0(R0.target)} kcal（估計 TDEE ${r0(R0.tdee)} kcal、BMR ${r0(R0.bmr)} kcal），蛋白質 ${r0(R0.pT)} g（${profile.pkg} g/kg），脂肪 ${r0(R0.fT)} g（25%），碳水 ${r0(R0.cT)} g`);
+  L.push(`- 每日目標：熱量約 ${r0(R0.target)} kcal（估計 TDEE ${r0(R0.tdee)} kcal、BMR ${r0(R0.bmr)} kcal；運動估算消耗只作參考，不加進目標），蛋白質 ${r0(R0.pT)} g（${profile.pkg} g/kg），脂肪 ${r0(R0.fT)} g（25%），碳水 ${r0(R0.cT)} g`);
   L.push(`- 每日上限：添加糖 ${r0(R0.sT)} g、鈉 2,300 mg；纖維目標 ${r0(R0.fbT)} g`, '');
   if (!V) { L.push('這週沒有飲食紀錄。'); return L.join('\n'); }
   L.push('## 每日數據', '', '| 日期 | 熱量 kcal | 目標 kcal | 蛋白質 g | 碳水 g | 脂肪 g | 脂肪佔熱量 | 添加糖 g | 纖維 g | 鈉 mg | 飲水 ml | 運動 | App 評分 |',
     '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-  V.rows.forEach(r => { const e = r.e, G = r.G, was = r.L && r.L.score !== G.score ? `，結算時 ${r.L.g}，補登後改變` : '';
+  V.rows.forEach(r => { const e = r.e, G = r.G, was = r.L && r.L.score !== G.score ? (r.L.v < GRADE_VER ? `，舊制評分 ${r.L.g}（計分方式更新）` : `，結算時 ${r.L.g}，補登後改變`) : '';
     L.push(`| ${mmdd(r.k)}(${'日一二三四五六'[r.dow]}) | ${r0(e.k)} | ${r0(r.R.target)} | ${r0(e.p)} | ${r0(e.c)} | ${r0(e.f)} | ${e.k ? r0(e.f*9/e.k*100) : 0}% | ${r0(e.s)} | ${r1(e.fb)} | ${r0(e.na)} | ${r.d.water} | ${r.d.ex.length ? r.d.ex.map(x => `${x.name}${x.min}分`).join('、') : '無'} | ${G.g}（${G.score}${was}） |`); });
   L.push('', `週平均：熱量 ${r0(V.avgK)} kcal（估計消耗 ${r0(V.avgT)}，每日赤字約 ${r0(V.deficit)}），蛋白質 ${r0(V.avgP)} g，脂肪 ${r0(V.avgF)} g（佔 ${r0(V.fatPct*100)}%），纖維 ${r1(V.avgFb)} g`, '');
   const W = weekData(ws), topK = W.agg('k').slice(0, 8);
