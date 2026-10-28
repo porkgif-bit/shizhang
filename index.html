@@ -83,6 +83,7 @@ header h1 small{display:block;margin:2px 0 0;font-weight:500;font-size:12px;colo
 .ring .track{stroke:var(--sunk)}
 .ring .val{stroke:var(--accent);transition:stroke-dashoffset .5s ease}
 .ring .val.over{stroke:var(--warn)}
+.fullrow{margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
 #tdeeNotice{grid-column:1/-1;margin:0}
 .chip{font-size:12px;background:var(--sunk);border-radius:999px;padding:3px 10px;color:var(--muted)}
@@ -307,6 +308,7 @@ button.chip{border:0;font:inherit}
   <section class="card" id="foodCard">
     <div class="sechead"><h2>飲食</h2><span class="num" id="foodSum"></span></div>
     <div id="meals"></div>
+    <div class="fullrow" id="fullRow" hidden></div>
   </section>
   <section class="card" id="spendCard">
     <div class="sechead"><h2>花費</h2><span class="num" id="spendSum"></span></div>
@@ -597,6 +599,9 @@ async function init(){
 /* ---------- math ---------- */
 let sel = TODAY;
 function dayOf(date){ return days[date] || (days[date] = {food:[], water:0, ex:[], weight:null}); }
+// 記錄日：早午晚至少記到兩餐；只有 0–1 餐的日子，使用者按「這天就吃這些」（full）才算（5.1）
+function mainsOf(d){ return ['b','l','d'].filter(m => d.food.some(f => f.meal === m)).length; }
+function isLogged(date){ const d = days[date]; return !!(d && d.food.length && (mainsOf(d) >= 2 || d.full)); }
 function hasData(date){ const d = days[date]; return d && (d.food.length || d.water || d.ex.length || d.weight); }
 function curWeight(date = sel){
   const ds = Object.keys(days).filter(k => k <= date && days[k].weight).sort();
@@ -683,6 +688,12 @@ function render(){
     return `<div class="meal"><h3><span>${ml}</span><span class="num">${r0(sum)} kcal</span></h3>` + items.map(f =>
       `<div class="row"><button class="t" data-editfood="${f.i}" aria-label="修改 ${esc(f.name)}"><div class="nm">${esc(f.name)}${f.snack?'<span class="tag">零食</span>':''}</div><div class="m">${N0(f.cost)?`NT$${N0(f.cost).toLocaleString()} · `:''}P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}${N0(f.na)?` · 鈉 ${r0(f.na)}`:''}${N0(f.s)?` · 糖 ${r1(f.s)}`:''}</div></button><span class="k">${r0(f.k)}</span><button class="del" data-delfood="${f.i}" aria-label="刪除 ${esc(f.name)}">×</button></div>`).join('') + '</div>';
   }).join('') : `<div class="empty">${sel===TODAY?'今天還沒記錄。點下方「記一筆」，用份數最快。':'這天沒有飲食紀錄。'}</div>`;
+  // 記錄完整度：0–1 餐的日子可標「這天就吃這些」
+  const needFull = d.food.length && mainsOf(d) < 2 && sel <= TODAY;
+  $('#fullRow').hidden = !needFull;
+  $('#fullRow').innerHTML = !needFull ? '' : d.full
+    ? `<span>✓ 已標記這天就吃這些，算進記錄天數。</span><button class="btn ghost" id="fullOff">取消標記</button>`
+    : `<span>只記到${mainsOf(d) ? '一餐' : '點心'}。如果這天真的就吃這些，標記一下才會算進記錄天數；沒標記的當作可能漏記，不納入 TDEE 回推。</span><button class="btn" id="fullOn">這天就吃這些</button>`;
   // water
   $('#waterSum').textContent = `${d.water} / ${r0(R.waterT)} ml`;
   $('#waterFill').style.width = Math.min(100, d.water / R.waterT * 100) + '%';
@@ -708,27 +719,32 @@ function render(){
 }
 
 // 實測校正：近 28 天平均攝取 − 體重斜率 × 7,700。D1 後不再扣運動，回推值直接代表含訓練的總消耗
+// 窗口：最近 4 個已過完的日曆週（週一到週日）。攝取只取記錄 ≥6 天之週的記錄日；體重用窗口內全部紀錄（5.1）
 function calibData(){
-  const end = TODAY, start = addDays(end, -27);
-  const keys = Object.keys(days).filter(k => k >= start && k <= end);
-  const intakeDays = keys.filter(k => days[k].food.length);
-  const wts = keys.filter(k => days[k].weight).sort().map(k => [ (parseYmd(k)-parseYmd(start))/864e5, days[k].weight ]);
+  const end = addDays(weekStart(TODAY), -1), start = addDays(end, -27);
+  const weeks = [0,1,2,3].map(i => { const ws = addDays(start, i*7), ks = Array.from({length:7}, (_, j) => addDays(ws, j));
+    const logged = ks.filter(isLogged); return {ws, logged, ok: logged.length >= 6}; });
+  const okWeeks = weeks.filter(w => w.ok).length;
+  const intakeDays = weeks.filter(w => w.ok).flatMap(w => w.logged);
+  const wts = Object.keys(days).filter(k => k >= start && k <= end && days[k].weight).sort().map(k => [ (parseYmd(k)-parseYmd(start))/864e5, days[k].weight ]);
   const span = wts.length ? wts[wts.length-1][0] - wts[0][0] : 0;
-  if (intakeDays.length < 14 || wts.length < 4 || span < 10) return {ok:false, nIn:intakeDays.length, nW:wts.length};
+  const base = {start, end, okWeeks, nIn:intakeDays.length, nW:wts.length};
+  if (intakeDays.length < 14 || wts.length < 4 || span < 10) return {ok:false, ...base};
   const n = wts.length, mx = wts.reduce((s,w)=>s+w[0],0)/n, my = wts.reduce((s,w)=>s+w[1],0)/n;
   const slope = wts.reduce((s,w)=>s+(w[0]-mx)*(w[1]-my),0) / wts.reduce((s,w)=>s+(w[0]-mx)**2,0);
   const avgIn = intakeDays.reduce((s,k)=>s+days[k].food.reduce((a,f)=>a+f.k,0),0) / intakeDays.length;
-  return {ok:true, slope, avgIn, obs: avgIn - slope*7700};
+  return {ok:true, ...base, slope, avgIn, obs: avgIn - slope*7700};
 }
 function renderCalib(R){
   const C = calibData();
   let h;
   if (!C.ok) {
-    h = `<div class="note">實測校正：近 28 天需有 ≥14 天飲食紀錄、≥4 次體重（跨 10 天以上）。目前 ${C.nIn} 天飲食、${C.nW} 次體重。</div>`;
+    h = `<div class="note">實測校正：用最近 4 個完整週（${mmdd(C.start)}–${mmdd(C.end)}），只算記錄 ≥6 天的週。需合格週的記錄日 ≥14 天、≥4 次體重（跨 10 天以上）。目前 ${C.okWeeks}/4 週合格、${C.nIn} 天可用、${C.nW} 次體重。</div>`;
   } else {
     const {slope, avgIn, obs} = C;
     const diff = (obs - R.tdeeFormula) / R.tdeeFormula;
-    h = `<div>體重趨勢 <b class="num">${slope>=0?'+':''}${r1(slope*7)}</b> kg／週；平均攝取 <b class="num">${r0(avgIn)}</b> kcal</div>
+    h = `<div class="note">${mmdd(C.start)}–${mmdd(C.end)}：4 週中 ${C.okWeeks} 週記錄滿 6 天，採計 ${C.nIn} 天飲食</div>
+      <div>體重趨勢 <b class="num">${slope>=0?'+':''}${r1(slope*7)}</b> kg／週；平均攝取 <b class="num">${r0(avgIn)}</b> kcal</div>
       <div>回推每日總消耗約 <b class="num">${r0(obs)}</b> kcal（含運動；公式 ${r0(R.tdeeFormula)}，差 ${r0(diff*100)}%）</div>
       ${Math.abs(diff) > 0.10 ? '<div class="note warn">差距超過 10%，可考慮改用實測值。紀錄若有漏記，實測值會偏低。</div>' : '<div class="note">與公式差距在 10% 內。</div>'}
       <div class="btnrow">${profile.tdeeOverride ? '<button class="btn" id="calOff">改回公式值</button>' : ''}<button class="btn" id="calOn" data-v="${r0(obs)}">採用 ${r0(obs)} kcal</button></div>`;
@@ -742,7 +758,7 @@ function renderTdeeNotice(R){
   el.hidden = !need; if (!need) { el.innerHTML = ''; return; }
   const C = calibData();
   el.innerHTML = `計算方式已更新：運動消耗不再加進可吃額度，實測 TDEE 也不再扣掉運動。你目前採用的 ${r0(profile.tdeeOverride)} kcal 是舊算法，通常偏低，建議重新校正。`
-    + (C.ok ? '' : `<br>近 28 天紀錄還不夠重算（需 ≥14 天飲食、≥4 次體重），可以先改回公式值，等紀錄夠了再校正。`)
+    + (C.ok ? '' : `<br>最近 4 個完整週的紀錄還不夠重算（需記錄滿 6 天的週合計 ≥14 天、≥4 次體重），可以先改回公式值，等紀錄夠了再校正。`)
     + `<div class="btnrow">${C.ok ? `<button class="btn primary" id="tnNew" data-v="${r0(C.obs)}">採用新值 ${r0(C.obs)} kcal</button>` : ''}`
     + `<button class="btn" id="tnFormula">改回公式值 ${r0(R.tdeeFormula)} kcal</button><button class="btn ghost" id="tnKeep">先保留</button></div>`;
 }
@@ -760,6 +776,8 @@ document.addEventListener('click', ev => {
   else if (t.dataset.delex !== undefined){ dayOf(sel).ex.splice(+t.dataset.delex,1); saveDay(sel); render(); }
   else if (t.id === 'calOn' || t.id === 'tnNew'){ profile.tdeeOverride = +t.dataset.v; profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
   else if (t.id === 'calOff' || t.id === 'tnFormula'){ delete profile.tdeeOverride; profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
+  else if (t.id === 'fullOn'){ dayOf(sel).full = true; saveDay(sel); render(); }
+  else if (t.id === 'fullOff'){ delete dayOf(sel).full; saveDay(sel); render(); }
   else if (t.id === 'tnKeep'){ profile.tdeeVer = TDEE_VER; saveProfile(); render(); }
 });
 $('#exType').innerHTML = METS.map(([n,m],i)=>`<option value="${i}">${n}（${m}）</option>`).join('');
@@ -1632,8 +1650,11 @@ function weekData(ws){
   const agg = kind => { const m = {}; rows.forEach(r => r.d.food.forEach(f => { const v = N0(f[kind]); if (!v) return;
     const key = f.name.replace(/\s*[×x]\s*[\d.]+$/, '').replace(/\s+[\d.]+\s*(g|份|碗|顆|杯|片|個)$/, '');
     (m[key] = m[key] || {n:key, v:0, c:0}); m[key].v += v; m[key].c++; })); return Object.values(m).sort((a,b) => b.v - a.v); };
-  return {ws, keys, rows, avg, agg};
+  const nLogged = keys.filter(isLogged).length;
+  const elapsed = keys.filter(k => k <= TODAY).length; // 本週還沒過完時，已過幾天
+  return {ws, keys, rows, avg, agg, nLogged, elapsed, done: elapsed === 7 && keys[6] < TODAY};
 }
+function logLine(W, wk){ return `${wk}記錄 ${W.nLogged}/7 天` + (W.done ? '' : `（已過 ${W.elapsed} 天）`); }
 function weekReview(ws){
   const W = weekData(ws), rows = W.rows, n = rows.length;
   if (!n) return null;
@@ -1700,8 +1721,8 @@ function weekReview(ws){
   if (missingDays.length) notes.push(`${missingDays.map(mmdd).join('、')} 沒有飲食紀錄。`);
   const noNa = rows.filter(r => r.e.na < 300).length;
   if (noNa) notes.push(`有 ${noNa} 天的鈉低於 300 mg，可能是品項沒有填鈉，鈉的結論僅供參考。`);
-  const thin = rows.filter(r => r.d.food.length <= 2).length;
-  if (thin) notes.push(`有 ${thin} 天只記 1–2 筆，可能有漏記。`);
+  const thin = rows.filter(r => !isLogged(r.k)).length;
+  if (thin) notes.push(`有 ${thin} 天只記到 0–1 餐且沒有標記「這天就吃這些」，當作可能漏記。`);
   // 上週目標達成
   const prevGoals = (profile.weekGoals || {})[ws] || [];
   const goalCheck = prevGoals.map(gl => {
@@ -1710,7 +1731,9 @@ function weekReview(ws){
     return {...gl, ok, n};
   });
   const grades = rows.map(r => ({k:r.k, g:r.G.g, score:r.G.score, was: r.L && r.L.score !== r.G.score ? r.L.g : '', old: !!(r.L && r.L.v < GRADE_VER)}));
-  return {ws, n, rows, avgK, avgT, deficit, planned, avgP, avgF, fatPct, avgFb, verdict, good, top, pattern, notes, goalCheck, grades,
+  const logText = logLine(W, ws === weekStart(TODAY) ? '本週' : '這週')
+    + (W.done ? (W.nLogged >= 6 ? ' · 納入 TDEE 回推' : ' · 未滿 6 天，這週不納入 TDEE 回推') : W.nLogged + (7 - W.elapsed) < 6 ? ' · 已無法滿 6 天，這週不納入 TDEE 回推' : '');
+  return {ws, n, rows, logText, avgK, avgT, deficit, planned, avgP, avgF, fatPct, avgFb, verdict, good, top, pattern, notes, goalCheck, grades,
     nextGoals: top.map(t => ({type:t.goal.type, v:t.goal.v, text:t.goal.text(t.goal.v)}))};
 }
 
@@ -1721,6 +1744,7 @@ function openWeek(ws){
   const nav = `<div class="weeknav"><button class="btn ghost" id="wkPrev">‹ 上一週</button><b class="num">${mmdd(ws)}–${mmdd(we)}</b>
     <button class="btn ghost" id="wkNext"${nextWs > TODAY ? ' disabled' : ''}>下一週 ›</button></div>`;
   const body = !V ? '<div class="empty">這週還沒有飲食紀錄。</div>' : `
+    <div class="note${V.logText.includes('不納入') ? ' warn' : ''}">${esc(V.logText)}</div>
     <div class="wsec"><h3>① 一句話結論</h3><p>${esc(V.verdict)}</p>
       <div class="gstrip">${V.grades.map(x => `<span class="gpill g${x.g}"><b>${x.was ? (x.old ? '舊' : '') + x.was + '→' : ''}${x.g}</b>${mmdd(x.k)}</span>`).join('')}</div></div>
     ${V.goalCheck.length ? `<div class="wsec"><h3>上週定的目標</h3>${V.goalCheck.map(gl => `<p>${gl.ok >= Math.ceil(gl.n*0.7) ? '✅' : '◻️'} ${esc(gl.text)}：達成 ${gl.ok}/${gl.n} 天</p>`).join('')}</div>` : ''}
@@ -1787,6 +1811,7 @@ function aiText(ws, V, withBody){
   L.push(`- 每日目標：熱量約 ${r0(R0.target)} kcal（估計 TDEE ${r0(R0.tdee)} kcal、BMR ${r0(R0.bmr)} kcal；運動估算消耗只作參考，不加進目標），蛋白質 ${r0(R0.pT)} g（${profile.pkg} g/kg），脂肪 ${r0(R0.fT)} g（25%），碳水 ${r0(R0.cT)} g`);
   L.push(`- 每日上限：添加糖 ${r0(R0.sT)} g、鈉 2,300 mg；纖維目標 ${r0(R0.fbT)} g`, '');
   if (!V) { L.push('這週沒有飲食紀錄。'); return L.join('\n'); }
+  L.push(`- 記錄完整度：${V.logText}（早午晚至少兩餐，或使用者標記「這天就吃這些」才算一天）`, '');
   L.push('## 每日數據', '', '| 日期 | 熱量 kcal | 目標 kcal | 蛋白質 g | 碳水 g | 脂肪 g | 脂肪佔熱量 | 添加糖 g | 纖維 g | 鈉 mg | 飲水 ml | 運動 | App 評分 |',
     '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   V.rows.forEach(r => { const e = r.e, G = r.G, was = r.L && r.L.score !== G.score ? (r.L.v < GRADE_VER ? `，舊制評分 ${r.L.g}（計分方式更新）` : `，結算時 ${r.L.g}，補登後改變`) : '';
@@ -1820,7 +1845,7 @@ function aiText(ws, V, withBody){
 $('#weekBtn').onclick = () => openWeek();
 function renderWeekCard(){
   const ws = weekStart(sel), W = weekData(ws), n = W.rows.length;
-  $('#weekSum').textContent = n ? `${mmdd(ws)}–${mmdd(addDays(ws,6))} · 記了 ${n} 天 · 平均 ${r0(W.avg(r => r.e.k)).toLocaleString()} kcal` : `${mmdd(ws)}–${mmdd(addDays(ws,6))} · 還沒有紀錄`;
+  $('#weekSum').textContent = `${mmdd(ws)}–${mmdd(addDays(ws,6))} · ${logLine(W, ws === weekStart(TODAY) ? '本週' : '這週')}` + (n ? ` · 平均 ${r0(W.avg(r => r.e.k)).toLocaleString()} kcal` : '');
   const has = ((profile.weekNotes || {})[ws] || {}).t;
   $('#weekBtn').textContent = has ? '看回顧' : '看回顧・寫心得';
 }
@@ -2232,7 +2257,7 @@ function applyImport({o, ks}){
   ks.forEach(k => { const d = o.days[k];
     days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s', ...(N0(f.cost)>0?{cost:r0(N0(f.cost))}:{}), ...(f.snack?{snack:true}:{})})),
       water:N0(d.water), waterLog:Array.isArray(d.waterLog)?d.waterLog.filter(x=>x&&N0(x.ml)>0).map(x=>({ml:N0(x.ml), t:N0(x.t), ...(x.old?{old:true}:{})})):undefined, ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null,
-      supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined};
+      supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, ...(d.full?{full:true}:{})};
     saveDay(k); });
   if (Array.isArray(o.items)) { mergeItems(o.items.map(cleanItem).filter(Boolean)); lsSave(); markDirty(); }
   if (o.profile && typeof o.profile === 'object') {
