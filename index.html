@@ -792,9 +792,12 @@ function openSettings(first){
     $('#sImport') && ($('#sImport').onclick = () => { closeSheet(); $('#bkFile').value = ''; $('#bkFile').click(); });
     $('#sSave').onclick = () => {
       const pick = id => +$(id+' [aria-pressed=true]').dataset.v;
-      const n = {nick:$('#sNick').value.trim().slice(0,12), history:(profile&&profile.history)||[], cups:(profile&&Array.isArray(profile.cups))?profile.cups:undefined, supps:(profile&&profile.supps)||[], meds:(profile&&profile.meds)||[], sex:$('#sSex').value, age:+$('#sAge').value, height:+$('#sH').value, weight:+$('#sW').value, bf:(+$('#sBf').value >= 5 && +$('#sBf').value <= 60) ? r1(+$('#sBf').value) : 0,
-        pal:pick('#sPal'), deficit:pick('#sDef'), pkg:pick('#sPk'), customFoods:(profile&&profile.customFoods)||[]};
-      if (profile && profile.tdeeOverride) n.tdeeOverride = profile.tdeeOverride;
+      // 在原 profile 上更新設定欄位；weekNotes、weekGoals、history 等其他欄位原樣保留（P1）
+      const base = profile || {};
+      const n = {...base, nick:$('#sNick').value.trim().slice(0,12), sex:$('#sSex').value, age:+$('#sAge').value, height:+$('#sH').value, weight:+$('#sW').value, bf:(+$('#sBf').value >= 5 && +$('#sBf').value <= 60) ? r1(+$('#sBf').value) : 0,
+        pal:pick('#sPal'), deficit:pick('#sDef'), pkg:pick('#sPk')};
+      ['history','supps','meds','customFoods'].forEach(k => { if (!Array.isArray(n[k])) n[k] = []; });
+      if (n.cups !== undefined && !Array.isArray(n.cups)) delete n.cups;
       if (!(n.age>=18 && n.age<=100 && n.height>=120 && n.height<=220 && n.weight>=30 && n.weight<=250)) {
         $('#sNote').className = 'note warn'; $('#sNote').textContent = '請填年齡 18–100、身高 120–220 cm、體重 30–250 kg。'; return; }
       profile = n; saveProfile(); closeSheet(); render();
