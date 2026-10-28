@@ -597,7 +597,7 @@ let sel = TODAY;
 function dayOf(date){ return days[date] || (days[date] = {food:[], water:0, ex:[], weight:null}); }
 function hasData(date){ const d = days[date]; return d && (d.food.length || d.water || d.ex.length || d.weight); }
 function curWeight(date = sel){
-  const ds = Object.keys(days).filter(k => k <= sel && days[k].weight).sort();
+  const ds = Object.keys(days).filter(k => k <= date && days[k].weight).sort();
   return ds.length ? days[ds[ds.length-1]].weight : profile.weight;
 }
 function calc(date){
