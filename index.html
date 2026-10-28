@@ -199,6 +199,8 @@ details summary{cursor:pointer}
 .gletter{font-size:44px;font-weight:600;width:64px;height:64px;border-radius:16px;display:grid;place-items:center;background:var(--sunk);flex:none}
 .gletter.gA,.gletter.gB{background:var(--accent-soft);color:var(--accent)}
 .gletter.gE,.gletter.gF{color:var(--warn)}
+.gcol{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none}
+.gwas{font-size:11px;color:var(--muted);white-space:nowrap}
 .gtext{min-width:0;font-size:14.5px}
 .glabel{font-size:12px;color:var(--muted);letter-spacing:.06em}
 .gparts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -292,7 +294,7 @@ button.chip{border:0;font:inherit}
   <div class="macros" id="micros"></div>
   <div class="tip" id="tip" hidden></div>
   <section class="card grade" id="gradeCard" hidden>
-    <div class="gtop"><div class="gletter num" id="gLetter">—</div>
+    <div class="gtop"><div class="gcol"><div class="gletter num" id="gLetter">—</div><div class="gwas" id="gWas" hidden></div></div>
       <div class="gtext"><button class="glabel info" data-explain="grade" id="gLabel">今日結算</button><div id="gComment"></div></div></div>
     <div class="gparts" id="gParts"></div>
   </section>
@@ -1061,6 +1063,8 @@ const letter = s => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D
 function gradeDay(date){
   const d = days[date]; if (!d || !d.food.length) return null;
   const R = calc(date), e = R.eat;
+  // 今天用「今天／明天」；過去日期用「這天／下次」（P7）
+  const isToday = date >= TODAY, dT = isToday ? '今天' : '這天', nT = isToday ? '明天' : '下次';
   // 熱量
   let effDev;
   if (e.k <= R.target) effDev = (R.target - e.k) / R.target;
@@ -1087,10 +1091,10 @@ function gradeDay(date){
   const qWorst = [['脂肪', qF], ['鈉', qN], ['糖', qS]].sort((a,b) => a[1]-b[1])[0][0];
   const missing = [['b','早餐'],['l','午餐'],['d','晚餐']].filter(([m]) => !d.food.some(f => f.meal === m)).map(x => x[1]);
   const fix = {
-    '熱量': e.k > R.target ? `熱量超了 ${r0(e.k-R.target)} kcal${e.k <= R.tdee + R.exNet ? '（還在維持量內，不會胖）' : ''}，明天正餐固定、點心先記再吃。` : `熱量比目標少 ${r0(R.target-e.k)} kcal，吃太少會拖累肌肉，明天補足。`,
-    '蛋白質': `蛋白質只到 ${r0(e.p)}/${r0(R.pT)} g，明天每餐先放一份豆魚蛋肉。`,
-    '品質': {'脂肪': `脂肪佔熱量 ${r0(fatPct*100)}%，明天主菜選烤、滷、蒸，青菜要燙的。`, '鈉': `鈉 ${r0(e.na).toLocaleString()} mg，明天湯少喝、醬汁分開放。`, '糖': `添加糖 ${r0(e.s)} g，明天飲料改微糖或無糖。`}[qWorst],
-    '飲水': `水只喝了 ${d.water} ml，明天桌上放一瓶，看到就喝。`,
+    '熱量': e.k > R.target ? `熱量超了 ${r0(e.k-R.target)} kcal${e.k <= R.tdee + R.exNet ? '（還在維持量內，不會胖）' : ''}，${nT}正餐固定、點心先記再吃。` : `熱量比目標少 ${r0(R.target-e.k)} kcal，吃太少會拖累肌肉，${nT}補足。`,
+    '蛋白質': `蛋白質只到 ${r0(e.p)}/${r0(R.pT)} g，${nT}每餐先放一份豆魚蛋肉。`,
+    '品質': {'脂肪': `脂肪佔熱量 ${r0(fatPct*100)}%，${nT}主菜選烤、滷、蒸，青菜要燙的。`, '鈉': `鈉 ${r0(e.na).toLocaleString()} mg，${nT}湯少喝、醬汁分開放。`, '糖': `添加糖 ${r0(e.s)} g，${nT}飲料改微糖或無糖。`}[qWorst],
+    '飲水': `水只喝了 ${d.water} ml，${nT}桌上放一瓶，看到就喝。`,
     '紀錄': missing.length ? `${missing.join('、')}沒記到，漏記的那餐才是看不見的帳。` : '記得把運動也記上，有加分。',
     '補給品': `補給品還有 ${plan.filter(s => !took.has(s.id)).map(s => s.name).join('、')} 沒吃。`
   }[weak];
@@ -1101,8 +1105,8 @@ function gradeDay(date){
     B: pick(['穩，差一點就是 A。', '很不錯的一天，小地方修一下。']),
     C: pick(['及格有餘，還有進步空間。', '中規中矩，主線有顧到。']),
     D: pick(['有在記，但有一項明顯掉了。', '勉強過關，有個洞要補。']),
-    E: pick(['今天有點散，但你有記，這很重要。', '偏離目標了，問題很集中，好修。']),
-    F: pick(['今天放飛了。一天不算數，趨勢才算數。', '分數很低，但重點是明天怎麼做。'])
+    E: pick([`${dT}有點散，但你有記，這很重要。`, '偏離目標了，問題很集中，好修。']),
+    F: pick([`${dT}放飛了。一天不算數，趨勢才算數。`, `分數很低，但重點是${nT}怎麼做。`])
   }[g];
   return {g, score, sK, sP, sQ, sW, sL, sS, qF, qN, qS, fatPct, comment: g === 'A' ? head : head + fix};
 }
@@ -1121,11 +1125,13 @@ function renderGrade(){
   card.hidden = false;
   const L = sel < TODAY ? lockedGrade(sel) : null;
   const changed = L && L.score !== G.score;
-  const shown = L && !changed ? L : G;
-  $('#gLetter').textContent = changed ? L.g : shown.g;
-  $('#gLetter').className = 'gletter num g' + (changed ? L.g : shown.g);
+  // 大字與評語都取自同一次計算（G）；補登後分數有變時，小字標出午夜結算時的等第（P7）
+  $('#gLetter').textContent = G.g;
+  $('#gLetter').className = 'gletter num g' + G.g;
+  $('#gWas').hidden = !changed;
+  $('#gWas').textContent = changed ? `結算時 ${L.g}` : '';
   $('#gLabel').textContent = sel === TODAY ? `今日暫評 · ${G.score} 分（午夜結算）`
-    : changed ? `${sel} 結算 ${L.score} 分 · 補登後 ${L.g}→${G.g}（${G.score} 分）` : `${sel} 結算 · ${shown.score} 分`;
+    : changed ? `${sel} 補登後 ${G.score} 分 · 結算時 ${L.g}（${L.score} 分）` : `${sel} 結算 · ${G.score} 分`;
   $('#gComment').textContent = G.comment;
   $('#gParts').innerHTML = [['熱量',G.sK,35],['蛋白質',G.sP,25],['品質',G.sQ,15],['飲水',G.sW,10],['紀錄',G.sL,10],['補給品',G.sS,5]]
     .map(([n,v,m]) => `<div>${n}<b>${r0(v)}/${m}</b></div>`).join('');
@@ -1552,7 +1558,7 @@ function explain(key){
       tag:'計分規則', f:`熱量貼近目標 35 分\n蛋白質達標 25 分\n飲食品質 15 分（脂肪、鈉、添加糖各 5）\n飲水達標 10 分\n早午晚三餐都有記 8 分 + 有運動 2 分\n補給品照表吃 5 分`, res:'90↑ A · 80 B · 70 C · 60 D · 50 E · 50↓ F',
       body:['熱量誤差 5% 內拿滿分，之後連續扣分，不會因為差一點就掉一大截。超過目標但還在維持量（TDEE）以內的部分只扣一半，因為不會變胖；吃太少一樣會扣，長期赤字太大會掉肌肉。',
         '品質：脂肪佔熱量 30% 以內、鈉 2,300 mg 以內、添加糖在上限內各拿滿 5 分，超過越多扣越多。點心不算正餐。沒有設定補給品的人，補給品 5 分直接給滿。',
-        '當天的分數會到午夜才結算鎖定；之後補登或修改，會顯示「補登後 B→C」，原本的分數保留。這是阿鹽自訂的規則，不是醫學標準。'],
+        '當天的分數會到午夜才結算鎖定；之後補登或修改，大字改顯示補登後的等第，旁邊小字標「結算時 B」，原本的分數保留。這是阿鹽自訂的規則，不是醫學標準。'],
       src:[]
     }
   }[key];
