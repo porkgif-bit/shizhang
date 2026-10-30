@@ -12,7 +12,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: true,
   retries: 0,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: './report' }]],
+  // CI 另加 github reporter：失敗原因直接標在 GitHub Actions 的執行頁面上
+  reporter: [['list'], ...(process.env.CI ? [['github']] : []), ['html', { open: 'never', outputFolder: './report' }]],
   expect: { toHaveScreenshot: { maxDiffPixels: 0, animations: 'disabled', caret: 'hide' } },
   use: {
     baseURL: `http://127.0.0.1:${PORT}/`,
