@@ -279,3 +279,28 @@ button.chip{border:0;font:inherit}
 .bgrow .m{font-size:11.5px;color:var(--muted)}
 .bgrow input[type=number]{width:100%}
 .bgrow .opts{grid-column:1/-1;display:flex;gap:16px}
+/* 首頁預算進度條：流水開支以日期進度為刻度；超前標黃（--carb）、超過標紅（--warn）；固定開支只看已付 */
+.bgbars{display:flex;flex-direction:column}
+.bghead{display:flex;align-items:baseline;gap:4px;font-size:13px;font-weight:700;padding-top:2px}
+.bghead .hint{margin-left:6px;flex:1}
+.linkbtn{border:0;background:none;color:var(--accent);font-size:13px;padding:2px 0;text-decoration:underline}
+.bgbar{display:grid;grid-template-columns:1fr auto;grid-template-areas:"l c" "b c" "m c";gap:3px 8px;align-items:center;width:100%;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;padding:8px 0;-webkit-tap-highlight-color:transparent}
+.bgbar:first-of-type{border-top:0}
+.bgbar:active{background:var(--accent-soft)}
+.bgbar .bgl{grid-area:l;display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.bgbar .bgl .num{font-size:12.5px}
+.bgbar .bar{grid-area:b;position:relative;overflow:visible;height:8px;border-radius:4px}
+.bgbar .bar i{background:var(--accent);border-radius:4px}
+.bgbar .tick{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.bgbar .m{grid-area:m;font-size:12px;color:var(--muted);font-family:var(--num)}
+.bgbar .chev{grid-area:c}
+.bgbar.ahead .bar i{background:var(--carb)}
+.bgbar.ahead .m{color:var(--carb);font-weight:700}
+.bgbar.over .bar i{background:var(--warn)}
+.bgbar.over .m{color:var(--warn);font-weight:700}
+.bgtable{width:100%;border-collapse:collapse;font-size:13px}
+.bgtable th{font-weight:400;color:var(--muted);font-size:11.5px;text-align:right;padding:2px 0 4px}
+.bgtable td{text-align:right;padding:4px 0;border-top:1px solid var(--line)}
+.bgtable th:first-child,.bgtable td:first-child{text-align:left;font-family:var(--body)}
+.bgtable tfoot td{font-weight:700}
+.bgtable .neg{color:var(--warn);font-weight:700}

@@ -119,6 +119,16 @@ export function renderSpend(){
   $('#spendLine').textContent = m.total
     ? `飲食 ${money(m.food)}${m.snack ? `（零食 ${money(m.snack)}）` : ''} · 物品 ${money(m.goods)}`
     : `${label}還沒有花費紀錄。記一筆時順手填金額，買東西就新增物品。`;
+  const bars = budgetBars(ym);
+  $('#spendBudget').innerHTML = bars; $('#spendBudget').hidden = !bars;
+  $('#spendBudget').onclick = e => {
+    if (e.target.closest('#bgEdit')) { openBudgets(null); return; }
+    const b = e.target.closest('[data-bgcat]'); if (!b) return;
+    const cat = b.dataset.bgcat, bg = effBudget(cat, ym);
+    // 固定開支還沒付：直接記這一筆繳費；其他：看這個分類的明細
+    if (bg && bg.fixed && !(catSpent(ym)[cat] > 0)) openItemForm(null, null, {cat, price:bg.amount, ask:false});
+    else openLedger(true, {ym, cat});
+  };
   const due = dueReviews();
   $('#spendReview').innerHTML = due.length ? reviewCard(due[0]) + (due.length > 1 ? `<div class="note">還有 ${due.length - 1} 件等你回顧，在「物品與花費」裡。</div>` : '') : '';
   bindReview($('#spendReview'), render);
@@ -195,6 +205,39 @@ function lastBudgetRec(cat, ym){
 // 本月有效的預算（依統一分類順序）
 export const activeBudgets = ym => BUDGET_CATS.map(c => effBudget(c, ym)).filter(Boolean);
 const monthLabel = ym => ym === TODAY.slice(0,7) ? '本月' : `${+ym.slice(5)} 月`;
+const dim = ym => new Date(+ym.slice(0,4), +ym.slice(5), 0).getDate();
+// 日期進度：本月＝今天是第幾天 ÷ 本月天數；過去的月份＝100%
+export const monthProgress = ym => ym < TODAY.slice(0,7) ? 1 : ym > TODAY.slice(0,7) ? 0 : +TODAY.slice(8) / dim(ym);
+// 一個分類這個月的預算狀態。流水開支：over 超過、ahead 比日期進度快、ok；固定開支只分已付／還沒付，不標黃紅
+export function budgetStatus(b, spent, ym){
+  if (b.fixed) return {st:'fixed', paid: spent > 0};
+  const prog = monthProgress(ym);
+  return {st: spent > b.amount ? 'over' : spent / b.amount > prog ? 'ahead' : 'ok', prog};
+}
+const pct = x => (Math.round(Math.min(1, x) * 1000) / 10) + '%';
+function budgetBars(ym){
+  const list = activeBudgets(ym); if (!list.length) return '';
+  const spent = catSpent(ym);
+  return `<div class="bghead"><span>預算</span><span class="hint">刻度＝照日期應花到哪</span><button type="button" class="linkbtn" id="bgEdit">調整</button></div>` + list.map(b => {
+    const v = spent[b.cat] || 0, S = budgetStatus(b, v, ym);
+    const note = S.st === 'fixed' ? (S.paid ? `${monthLabel(ym)}已付 ${money(v)}${v > b.amount ? ` · 比預算多 ${money(v - b.amount)}` : ''}` : `還沒付 · 預算 ${money(b.amount)}`)
+      : S.st === 'over' ? `超過 ${money(v - b.amount)}` : `剩 ${money(b.amount - v)}${S.st === 'ahead' ? ' · 比日期進度快' : ''}`;
+    const fill = S.st === 'fixed' ? (S.paid ? 1 : 0) : v / b.amount;
+    return `<button type="button" class="bgbar ${S.st}${S.st === 'fixed' && S.paid ? ' paid' : ''}" data-bgcat="${esc(b.cat)}" aria-label="${esc(b.cat)}：${note}">
+      <div class="bgl"><span>${esc(b.cat)}${b.fixed ? '<span class="tag">固定</span>' : ''}</span><span class="num">${money(v)} / ${money(b.amount)}</span></div>
+      <div class="bar"><i style="width:${pct(fill)}"></i>${S.st === 'fixed' ? '' : `<b class="tick" style="left:${pct(S.prog)}"></b>`}</div>
+      <div class="m">${note}</div>${CHEV}</button>`; }).join('');
+}
+// 明細上方的預算對照：本月「到目前」、過去月份「結算」
+function ledgerBudgetTable(ym){
+  const list = activeBudgets(ym); if (!list.length) return '';
+  const spent = catSpent(ym), n = v => r0(v).toLocaleString(), d = v => (v < 0 ? '−' : '+') + n(Math.abs(v));
+  const tot = list.reduce((a,b) => [a[0] + b.amount, a[1] + (spent[b.cat] || 0)], [0,0]);
+  return `<div class="wsec" id="ledBudget"><h3>${ym === TODAY.slice(0,7) ? `預算對照（${+ym.slice(5)} 月到目前）` : `預算結算（${+ym.slice(5)} 月）`}</h3>
+    <table class="bgtable num"><thead><tr><th>分類</th><th>預算</th><th>實際</th><th>差額</th></tr></thead><tbody>${list.map(b => { const v = spent[b.cat] || 0, df = b.amount - v;
+      return `<tr><td>${esc(b.cat)}${b.fixed ? '（固定）' : ''}</td><td>${n(b.amount)}</td><td>${n(v)}</td><td class="${df < 0 && !b.fixed ? 'neg' : ''}">${d(df)}</td></tr>`; }).join('')}</tbody>
+    <tfoot><tr><td>合計</td><td>${n(tot[0])}</td><td>${n(tot[1])}</td><td class="${tot[0] - tot[1] < 0 ? 'neg' : ''}">${d(tot[0] - tot[1])}</td></tr></tfoot></table></div>`;
+}
 
 export function openBudgets(back){
   const cur = TODAY.slice(0,7), spent = catSpent(cur);
@@ -243,7 +286,6 @@ function budgetSection(){
 }
 
 /* ---------- 花費明細（P6）：依月份列出所有金錢紀錄，每筆可點開修改，改完回到明細 ---------- */
-const ledgerBudgetTable = () => ''; // 預算對照：預算功能完成後補上
 const MEAL_NAME = Object.fromEntries(MEALS);
 const WEEKDAY = '日一二三四五六';
 // 一個月的金錢紀錄：有填金額的飲食（歸「食」）＋那個月買的物品（依購買日，D6 現金制）
@@ -263,8 +305,8 @@ function firstMoneyMonth(){
 }
 // 明細目前的月份、篩選與捲動位置；從修改畫面回來時照原樣恢復
 const led = {ym:null, kind:'all', cat:'', top:0};
-export function openLedger(reset){
-  if (reset || !led.ym) Object.assign(led, {ym:TODAY.slice(0,7), kind:'all', cat:'', top:0});
+export function openLedger(reset, preset){
+  if (reset || !led.ym) Object.assign(led, {ym:TODAY.slice(0,7), kind:'all', cat:'', top:0}, preset || {});
   const ym = led.ym, all = monthEntries(ym);
   const food = all.filter(x => x.src === 'food').reduce((s,x) => s + x.amount, 0), goods = all.filter(x => x.src === 'item').reduce((s,x) => s + x.amount, 0);
   const byKind = all.filter(x => led.kind === 'all' || x.src === led.kind);
@@ -310,10 +352,11 @@ export function openLedger(reset){
 }
 
 /* 新增／修改物品 */
-export function openItemForm(it, back){
+// preset：新增時預先帶入的欄位（例如首頁固定開支「還沒付」帶入分類與預算金額）
+export function openItemForm(it, back, preset){
   const isNew = !it;
-  const x = it ? {...it} : {name:'', price:'', date:sel, type:'gen', cat:'', years:3, ask:true};
-  let type = x.type, cat = x.cat, years = x.years || 3, askTouched = !isNew, rv = x.review ? x.review.v : null;
+  const x = it ? {...it} : {name:'', price:'', date:sel, type:'gen', cat:'', years:3, ask:true, ...(preset || {})};
+  let type = x.type, cat = x.cat, years = x.years || 3, askTouched = !isNew || !!preset, rv = x.review ? x.review.v : null;
   const names = [...new Set(liveItems().map(i => i.name))].slice(0, 200);
   openSheet(`
     <h2>${isNew ? '新增物品' : '修改物品'}</h2>
