@@ -15,6 +15,7 @@ const SCREENS = [
   { name: '04-物品與花費', open: '#itemsOpen', tall: true },
   { name: '05-設定', open: '#btnSettings', tall: true },
   { name: '06-花費明細', open: '#ledgerOpen', tall: true },
+  { name: '07-預算設定', open: ['#itemsOpen', '#bgOpen'], tall: true },
 ];
 
 for (const s of SCREENS) {
@@ -26,7 +27,7 @@ for (const s of SCREENS) {
     }
     if (s.tall) await page.setViewportSize({ width: 390, height: 1600 }); // 底部彈出的面板拉高，能拍到更多內容
     const errors = await openApp(page);
-    if (s.open) { await page.locator(s.open).click(); await expect(page.locator('#sheetHost .sheet')).toBeVisible(); }
+    for (const sel of [s.open].flat().filter(Boolean)) { await page.locator(sel).click(); await expect(page.locator('#sheetHost .sheet')).toBeVisible(); }
     await page.evaluate(() => document.fonts.ready);
     await expect(page).toHaveScreenshot(`${s.name}.png`, { fullPage: !!s.fullPage });
     expect(errors).toEqual([]);

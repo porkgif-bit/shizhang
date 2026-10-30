@@ -1,5 +1,5 @@
 /* 每日食帳 · money.js — 花費：物品清單、每日成本、回購週期、30 天回顧、花費圖表、首頁花費卡、物品 CSV */
-import { $, SPEND_ORDER, profile, ui, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, parseYmd, r0, r1, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
+import { $, SPEND_ORDER, budgets, effBudget, saveBudget, profile, ui, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, parseYmd, r0, r1, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
 import { openEdit, render } from './diet.js';
 
 
@@ -148,6 +148,7 @@ export function openItems(){
   openSheet(`
     <div class="sechead"><h2>物品與花費</h2><button class="btn primary" id="iAdd">＋ 新增物品</button></div>
     ${due.length ? `<div class="mlist">${due.map(reviewCard).join('')}</div>` : ''}
+    ${budgetSection()}
     <div class="wsec"><h3>近六個月花費</h3>${monthChart(TODAY.slice(0,7))}</div>
     <div class="wsec"><h3>${year} 年花在哪</h3>${rowsY.length ? rowsY.map(([c,v,sub]) => `<div class="yrow"><div class="t"><div>${esc(c)}${sub ? `<span class="m"> · ${sub}</span>` : ''}</div><div class="bar"><i style="width:${(v/maxY*100).toFixed(1)}%;background:var(--accent)"></i></div></div><span class="k num">${money(v)}</span></div>`).join('') : '<div class="empty">今年還沒有花費紀錄。</div>'}</div>
     <div class="wsec" data-sec="big"><h3>大件：每日成本${big.length ? HINT : ''}</h3>${big.length ? big.map(x => { const c = dailyCost(x); return `<div class="bigcard">
@@ -168,10 +169,77 @@ export function openItems(){
     <button class="btn block" id="iClose">完成</button>
   `, host => {
     $('#iAdd').onclick = () => openItemForm(null, openItems);
+    $('#bgOpen').onclick = () => openBudgets(openItems);
     $('#iClose').onclick = closeSheet;
     bindReview(host, () => { openItems(); render(); });
     host.querySelector('.sheet').scrollTop = 0;
   });
+}
+
+/* ---------- 預算（5.2-J、D6、D10）---------- */
+// 這次可設預算的分類：食＋現行物品分類（依統一支出分類的順序）。水電電信、保險等等收支規則上線後才開放
+export const BUDGET_CATS = ['食', ...ITEM_CATS].sort((a,b) => SPEND_ORDER(a) - SPEND_ORDER(b));
+const DEF_ESSENTIAL = ['食','住','寵物'], DEF_FIXED = ['住'];
+// 一個月各分類花了多少（現金制，D6）：飲食金額歸「食」，物品依購買日歸它的分類
+export function catSpent(ym){
+  const out = {};
+  monthEntries(ym).forEach(x => { out[x.cat] = (out[x.cat] || 0) + x.amount; });
+  return out;
+}
+// 某分類在某月（含）以前最新的一筆設定，包含 amount 0；用來帶出上次勾的「必要」「固定」
+function lastBudgetRec(cat, ym){
+  let best = null;
+  budgets.forEach(b => { if (b && !b.del && b.cat === cat && b.from <= ym && (!best || b.from > best.from || (b.from === best.from && N0(b._t) > N0(best._t)))) best = b; });
+  return best;
+}
+// 本月有效的預算（依統一分類順序）
+export const activeBudgets = ym => BUDGET_CATS.map(c => effBudget(c, ym)).filter(Boolean);
+const monthLabel = ym => ym === TODAY.slice(0,7) ? '本月' : `${+ym.slice(5)} 月`;
+
+export function openBudgets(back){
+  const cur = TODAY.slice(0,7), spent = catSpent(cur);
+  const prev = [1,2,3].map(i => addMonths(cur, -i)).map(catSpent);
+  const firstOf = {}; monthEntries('').forEach(x => { const m = x.date.slice(0,7); if (!firstOf[x.cat] || m < firstOf[x.cat]) firstOf[x.cat] = m; });
+  const avg = c => { const ms = [1,2,3].map(i => addMonths(cur, -i)).map((m, i) => [m, prev[i][c] || 0]).filter(([m]) => firstOf[c] && m >= firstOf[c]);
+    return ms.length ? ms.reduce((s,[,v]) => s + v, 0) / ms.length : null; };
+  openSheet(`
+    <h2>每月預算</h2>
+    <div class="note">改了從本月（${+cur.slice(5)} 月）開始算，之前的月份照舊。留白＝不設。<br><b>必要</b>：之後用來算緊急預備金要存多少。<br><b>固定開支</b>：房租、管理費這類一次付清的；記下繳費就算付清，不標黃、不提醒。</div>
+    <div class="bglist">${BUDGET_CATS.map(c => { const e = effBudget(c, cur), r = lastBudgetRec(c, cur), a = avg(c);
+      const ess = r ? !!r.essential : DEF_ESSENTIAL.includes(c), fix = r ? !!r.fixed : DEF_FIXED.includes(c);
+      return `<div class="bgrow" data-bcat="${esc(c)}">
+        <div class="t"><b>${esc(c)}</b><div class="m num">本月 ${money(spent[c] || 0)}${a !== null ? ` · 前 3 月平均 ${money(a)}` : ''}</div></div>
+        <input type="number" inputmode="numeric" min="0" max="9999999" step="1" placeholder="不設" aria-label="${esc(c)} 每月預算（元）" value="${e ? e.amount : ''}">
+        <div class="opts"><label class="note"><input type="checkbox" data-ess ${ess ? 'checked' : ''}> 必要</label><label class="note"><input type="checkbox" data-fix ${fix ? 'checked' : ''}> 固定開支</label></div>
+      </div>`; }).join('')}</div>
+    <div class="note warn" id="bgMsg" role="status"></div>
+    <div class="btnrow"><button class="btn primary" id="bgSave">儲存</button><button class="btn ghost" id="bgBack">取消</button></div>
+  `, host => {
+    const goBack = () => back ? back() : closeSheet();
+    $('#bgBack').onclick = goBack;
+    $('#bgSave').onclick = () => {
+      const rows = [...host.querySelectorAll('[data-bcat]')].map(el => ({cat:el.dataset.bcat, raw:el.querySelector('input[type=number]').value.trim(),
+        ess:el.querySelector('[data-ess]').checked, fix:el.querySelector('[data-fix]').checked}));
+      const bad = rows.find(r => r.raw !== '' && !(Number.isInteger(+r.raw) && +r.raw >= 0 && +r.raw <= 9999999));
+      if (bad) { $('#bgMsg').textContent = `${bad.cat}：金額請填 0～9,999,999 的整數，或留白。`; return; }
+      let n = 0;
+      rows.forEach(({cat, raw, ess, fix}) => {
+        const amount = raw === '' ? 0 : +raw, e = effBudget(cat, cur), r = lastBudgetRec(cat, cur);
+        if (!e && amount === 0) return; // 本來沒設、現在也沒設
+        if (e && r === e && e.amount === amount && !!e.essential === ess && !!e.fixed === fix) return; // 沒改
+        saveBudget({id:`${cur}:${cat}`, cat, amount, from:cur, ...(ess ? {essential:true} : {}), ...(fix ? {fixed:true} : {})}); n++;
+      });
+      render(); goBack();
+      if (n) toast(`預算記好了，從 ${+cur.slice(5)} 月開始算。記帳時就看得到這個分類還剩多少。`);
+    };
+  });
+}
+function budgetSection(){
+  const cur = TODAY.slice(0,7), list = activeBudgets(cur);
+  return `<div class="wsec" data-sec="budget"><h3>每月預算</h3>
+    ${list.length ? `<div class="m num">${list.map(b => `${esc(b.cat)} ${money(b.amount)}${b.fixed ? '（固定）' : ''}`).join(' · ')}</div>`
+      : '<div class="empty">還沒設定。設了之後，記帳時就看得到這個分類這個月還剩多少。</div>'}
+    <div class="btnrow"><button type="button" class="btn" id="bgOpen">${list.length ? '調整預算' : '設定預算'}</button></div></div>`;
 }
 
 /* ---------- 花費明細（P6）：依月份列出所有金錢紀錄，每筆可點開修改，改完回到明細 ---------- */

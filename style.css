@@ -273,3 +273,9 @@ button.chip{border:0;font:inherit}
 .ledcat{margin-top:-4px}
 .ledday{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;padding:10px 0 2px;border-top:1px solid var(--line)}
 .ledday + .row.erow{border-top:0}
+/* 預算設定 */
+.bgrow{display:grid;grid-template-columns:1fr 110px;gap:4px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.bgrow:first-child{border-top:0}
+.bgrow .m{font-size:11.5px;color:var(--muted)}
+.bgrow input[type=number]{width:100%}
+.bgrow .opts{grid-column:1/-1;display:flex;gap:16px}
