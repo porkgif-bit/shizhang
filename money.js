@@ -214,6 +214,27 @@ export function budgetStatus(b, spent, ym){
   const prog = monthProgress(ym);
   return {st: spent > b.amount ? 'over' : spent / b.amount > prog ? 'ahead' : 'ok', prog};
 }
+// 記帳當下的剩餘額度（D10）。add：這一筆要記的金額；exclItem：修改既有物品時先扣掉它自己
+const bgLabel = cat => cat === '食' ? '食費' : `${cat}預算`;
+export function budgetLine(cat, ym, add = 0, exclItem = null){
+  const b = cat && effBudget(cat, ym); if (!b) return null;
+  let spent = catSpent(ym)[cat] || 0;
+  if (exclItem && exclItem.cat === cat && exclItem.date.startsWith(ym)) spent -= exclItem.price;
+  const L = monthLabel(ym), after = spent + add, pre = add > 0 ? '記下後，' : '';
+  if (b.fixed) return {warn:false, text: after > 0 ? `${pre}${L}${cat}已付 ${money(after)}（預算 ${money(b.amount)}）` : `${L}${cat}還沒付（預算 ${money(b.amount)}）`};
+  const left = b.amount - after;
+  if (left < 0) return {warn:true, text: add > 0 ? `${pre}${L}${bgLabel(cat)}超過 ${money(-left)}` : `${L}${bgLabel(cat)}已超過 ${money(-left)}`};
+  const daysLeft = ym === TODAY.slice(0,7) ? dim(ym) - +TODAY.slice(8) + 1 : 0;
+  return {warn:false, text:`${pre}${L}${bgLabel(cat)}剩 ${money(left)}${daysLeft ? `，接下來每天可用 ${money(left / daysLeft)}` : ''}`};
+}
+// 80%／100% 提醒：只有「這一筆讓用量跨過門檻」才說，所以同一個月各只會說一次；固定開支不提醒
+export function budgetAlert(cat, ym, before, after){
+  const b = effBudget(cat, ym); if (!b || b.fixed || after <= before) return '';
+  const L = monthLabel(ym), a = b.amount;
+  if (before < a && after >= a) return after > a ? `${L}${bgLabel(cat)}超過預算 ${money(after - a)} 了，這個月剩下的花費收一收。` : `${L}${bgLabel(cat)}剛好用完了，這個月剩下的花費收一收。`;
+  if (before < a * 0.8 && after >= a * 0.8) return `${L}${bgLabel(cat)}已用 ${r0(after / a * 100)}%，剩 ${money(a - after)}。`;
+  return '';
+}
 const pct = x => (Math.round(Math.min(1, x) * 1000) / 10) + '%';
 function budgetBars(ym){
   const list = activeBudgets(ym); if (!list.length) return '';
@@ -366,6 +387,7 @@ export function openItemForm(it, back, preset){
       <label>價格（元）<input id="iP" type="number" inputmode="numeric" min="0" max="9999999" step="1" value="${x.price === '' ? '' : x.price}"></label>
       <label>購買日期<input id="iD" type="date" value="${x.date}" max="${TODAY}"></label>
     </div>
+    <div class="note" id="iBudget" role="status" hidden></div>
     <div id="iQtyBox">
       <div class="grid2">
         <label>數量（選填）<input id="iQ" type="number" inputmode="numeric" min="1" max="9999" step="1" placeholder="1" value="${x.qty || ''}"></label>
@@ -387,7 +409,12 @@ export function openItemForm(it, back, preset){
     <div class="btnrow"><button class="btn primary" id="iSave">${isNew ? '記下來' : '儲存'}</button><button class="btn ghost" id="iBack">取消</button>${isNew ? '' : '<button class="btn ghost danger" id="iDel">刪除</button>'}</div>
   `, () => {
     const price = () => +$('#iP').value || 0;
+    const showBudget = () => {
+      const d = $('#iD').value, L = /^\d{4}-\d{2}-\d{2}$/.test(d) && budgetLine(cat, d.slice(0,7), price(), isNew ? null : it);
+      $('#iBudget').hidden = !L; if (L) { $('#iBudget').textContent = L.text; $('#iBudget').className = L.warn ? 'note warn' : 'note'; }
+    };
     const showBig = () => {
+      showBudget();
       $('#iBig').hidden = type !== 'big';
       $('#iQtyBox').hidden = type !== 'cons';
       const q = +$('#iQ').value, u = $('#iU').value.trim() || '個';
@@ -402,7 +429,8 @@ export function openItemForm(it, back, preset){
       if (!askTouched) $('#iAsk').checked = type !== 'cons';
       showBig(); });
     $('#iCat').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cat = b.dataset.v;
-      $('#iCat').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); });
+      $('#iCat').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); showBudget(); });
+    $('#iD').onchange = showBudget;
     $('#iRv') && $('#iRv').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; rv = b.dataset.v;
       $('#iRv').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); });
     $('#iYm').onclick = () => { years = Math.max(1, years - 1); showBig(); };
@@ -439,7 +467,9 @@ export function openItemForm(it, back, preset){
       if (type === 'cons' && unit) out.unit = unit;
       if ($('#iAsk').checked) out.ask = true;
       if (!isNew && x.review && rv) out.review = {v:rv, note:($('#iRvNote') ? $('#iRvNote').value.trim().slice(0,200) : x.review.note || ''), at:x.review.at || TODAY};
+      const ymNew = date.slice(0,7), before = catSpent(ymNew)[cat] || 0;
       saveItem(out); render();
+      const alert = budgetAlert(cat, ymNew, before, catSpent(ymNew)[cat] || 0);
       let t;
       if (!isNew) t = `${name} 已更新。`;
       else if (type === 'big') t = `${name} 記好了。用滿 ${years} 年，每天約 ${money(p / (years * 365))}。`;
@@ -447,7 +477,7 @@ export function openItemForm(it, back, preset){
         t = c && c.n >= 2 ? (c.byPack ? `${name} 記好了，每${c.unit}約撐 ${r1(c.perPack)} 天，一年約 ${money(c.year)}。` : `${name} 記好了，平均 ${r0(c.avg)} 天買一次，一年約 ${money(c.year)}。`)
           : `${name} 記好了。下次再買，就算得出${c && c.byPack ? `每${c.unit}撐幾天` : '多久買一次'}。`; }
       else t = `${name} 記好了${out.ask ? '，30 天後問你值不值得' : ''}。`;
-      toast(`${t}${EDIT_REMIND}`); goBack(); };
+      toast(`${t}${alert ? ' ' + alert : ''}${EDIT_REMIND}`); goBack(); };
     showBig();
   });
 }

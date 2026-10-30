@@ -22,6 +22,7 @@ const SCREENS = [
   { name: '07-預算設定', open: ['#itemsOpen', '#bgOpen'], tall: true },
   { name: '08-首頁預算', budgets: true, shot: '#spendCard' },
   { name: '09-明細預算對照', budgets: true, open: '#ledgerOpen', tall: true },
+  { name: '10-記一筆預算', budgets: true, open: '#fab', tall: true },
 ];
 
 for (const s of SCREENS) {

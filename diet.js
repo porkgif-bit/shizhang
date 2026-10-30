@@ -1,7 +1,7 @@
 /* 每日食帳 · diet.js — 飲食：參考資料、熱量與營養計算、首頁、設定、記一筆、修改紀錄、飲水、阿鹽評語、每日評分、指數說明 */
 import { $, MEALS, N0, TODAY, addDays, clamp01, closeSheet, dayOf, days, esc, hasData, isLogged, items, mainsOf, meta, mmdd, n0na, newId, now, openSheet, parseYmd, pickOne, profile, r0, r1, saveDay, saveProfile, sel, setProfile, setSel, toast, weekStart, who } from './core.js';
 import { avoidMsg, renderCare } from './care.js';
-import { openItemForm, openItems, renderSpend } from './money.js';
+import { budgetAlert, budgetLine, catSpent, openItemForm, openItems, renderSpend } from './money.js';
 import { renderWeekCard } from './review.js';
 
 
@@ -260,6 +260,7 @@ export function openAdd(){
       <input id="aWaterMl" type="number" inputmode="numeric" min="10" max="2000" step="10" placeholder="ml" style="width:90px" aria-label="算進飲水的 ml" disabled><span class="note">ml</span></div>
     <div class="inline"><input id="aCost" type="number" inputmode="numeric" min="0" max="999999" step="1" placeholder="花了多少" style="width:120px" aria-label="金額（元）"><span class="note">元（選填）</span>
       <label class="note"><input id="aSnack" type="checkbox"> 零食（非正餐）</label></div>
+    <div class="note" id="aBudget" role="status" hidden></div>
     <div class="btnrow"><button class="btn primary" id="aAdd">加入</button><button class="btn ghost" id="aClose">完成</button></div>
   `, () => {
     const meal = () => $('#aMeal [aria-pressed=true]').dataset.v;
@@ -270,6 +271,10 @@ export function openAdd(){
     let snackTouched = false;
     const syncSnack = () => { if (!snackTouched) $('#aSnack').checked = meal() === 's'; };
     $('#aSnack').onchange = () => { snackTouched = true; };
+    // 有設食費預算時：即時顯示本月還剩多少、接下來每天可用多少（D10）
+    const showBudget = () => { const L = budgetLine('食', sel.slice(0,7), Math.max(0, Math.round(+$('#aCost').value || 0)));
+      $('#aBudget').hidden = !L; if (L) { $('#aBudget').textContent = L.text; $('#aBudget').className = L.warn ? 'note warn' : 'note'; } };
+    $('#aCost').addEventListener('input', showBudget); showBudget();
     $('#aMeal').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
       $('#aMeal').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x===b)); syncSnack(); });
     syncSnack();
@@ -356,11 +361,13 @@ export function openAdd(){
       if (cost > 0) entry.cost = cost;
       if ($('#aSnack').checked) entry.snack = true;
       if (wOn) entry.wid = newId();
+      const ym = sel.slice(0,7), spent0 = catSpent(ym)['食'] || 0;
       dayOf(sel).food.push(entry); remember(entry);
+      const bmsg = budgetAlert('食', ym, spent0, spent0 + N0(entry.cost));
       if (wOn) pushWater(wml, entry);
-      saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進飲水 ${wml} ml。` : ''));
+      saveDay(sel); render(); toast((avoidMsg(entry.name) || foodComment(entry)) + (wOn ? ` 💧 也算進飲水 ${wml} ml。` : '') + (bmsg ? ' ' + bmsg : ''));
       $('#aWater').checked = false; $('#aWaterMl').disabled = true; $('#aWaterMl').value = ''; wmlTouched = false;
-      $('#aCost').value = ''; snackTouched = false; syncSnack();
+      $('#aCost').value = ''; snackTouched = false; syncSnack(); showBudget();
       counts = {}; pick = null; body(); $('#aSum').textContent = `已加入：${name}`;
     };
     body();
@@ -748,14 +755,16 @@ export function openEdit(idx, opt = {}){
         if (w) { const old = w.ml; d.water = Math.max(0, d.water - old + wml); w.ml = wml; w.from = name; w.wid = upd.wid; if (wml !== old) wmsg = `飲水從 ${old} 改成 ${wml} ml。`; }
         else { pushWater(wml, upd); wmsg = `已算進飲水 ${wml} ml。`; }
       } else { const ml = unlinkWater(d, e); if (ml) wmsg = `已從飲水扣掉 ${ml} ml。`; }
+      const ym = date.slice(0,7), spent0 = catSpent(ym)['食'] || 0;
       d.food[idx] = upd; saveDay(date);
+      const bmsg = budgetAlert('食', ym, spent0, spent0 - N0(e.cost) + N0(upd.cost));
       if ($('#eHist').checked) {
         const h = profile.history || (profile.history = []);
         const i = h.findIndex(x => x.n === base.name || x.n === name);
         if (i >= 0) { h[i] = {...h[i], n:name, k:upd.k, p:upd.p, c:upd.c, f:upd.f, s:upd.s, fb:upd.fb, na:upd.na}; if (upd.cost) h[i].cost = upd.cost; saveProfile(); }
         else remember(upd);
       }
-      render(); goBack(); if (wmsg) toast(wmsg); };
+      render(); goBack(); if (wmsg || bmsg) toast([wmsg, bmsg].filter(Boolean).join(' ')); };
   });
 }
 
