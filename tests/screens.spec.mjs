@@ -14,6 +14,7 @@ const SCREENS = [
   { name: '03-週回顧', open: '#weekBtn', tall: true },
   { name: '04-物品與花費', open: '#itemsOpen', tall: true },
   { name: '05-設定', open: '#btnSettings', tall: true },
+  { name: '06-花費明細', open: '#ledgerOpen', tall: true },
 ];
 
 for (const s of SCREENS) {

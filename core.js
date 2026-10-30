@@ -219,6 +219,9 @@ export const mmdd = k => k.slice(5).replace('-', '/');
 /* ---------- 花費：物品清單、30 天回顧、每日成本、回購週期 ---------- */
 export const ITEM_TYPES = [['big','大件'],['cons','消耗品'],['gen','一般']];
 export const ITEM_CATS = ['衣','住','行','育','樂','3C','保養美妝','居家民生','寵物','其他'];
+// 統一支出分類（5.2-J）：飲食、物品、收支規則、預算共用。現行物品分類與其中十個同名，舊資料不必轉換；飲食金額一律歸「食」
+export const SPEND_CATS = ['食','住','水電電信','行','衣','育','樂','3C','保養美妝','居家民生','寵物','保險','訂閱','孝親','分期','利息','其他'];
+export const SPEND_ORDER = c => { const i = SPEND_CATS.indexOf(c); return i < 0 ? 99 : i; };
 export const REVIEWS = [['good','值得'],['meh','普通'],['regret','後悔']];
 export const typeName = t => (ITEM_TYPES.find(x => x[0] === t) || ITEM_TYPES[2])[1];
 export const reviewName = v => (REVIEWS.find(x => x[0] === v) || ['',''])[1];

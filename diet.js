@@ -413,10 +413,10 @@ export function unlinkWater(d, e){
   const w = linkedWater(d, e); if (!w) return 0;
   d.waterLog.splice(d.waterLog.indexOf(w), 1); d.water = Math.max(0, d.water - w.ml); return w.ml;
 }
-export function removeFood(idx){
-  const d = dayOf(sel), e = d.food[idx]; if (!e) return;
+export function removeFood(idx, date = sel){
+  const d = dayOf(date), e = d.food[idx]; if (!e) return;
   d.food.splice(idx, 1); const ml = unlinkWater(d, e);
-  saveDay(sel); render(); if (ml) toast(`已刪除 ${e.name}，連同算進飲水的 ${ml} ml 一起扣掉。`);
+  saveDay(date); render(); if (ml) toast(`已刪除 ${e.name}，連同算進飲水的 ${ml} ml 一起扣掉。`);
 }
 /* 快捷杯：使用者自己的杯子清單，可以新增、刪除 */
 export const DEFAULT_CUPS = [240, 300, 450];
@@ -690,9 +690,11 @@ export function remember(e){
   if (h.length > 300) h.length = 300;
   saveProfile();
 }
-export function openEdit(idx){
-  const e = dayOf(sel).food[idx]; if (!e) return;
-  const base = {...e}, lw = linkedWater(dayOf(sel), e);
+// opt.date：要修改哪一天（預設首頁選取日）；opt.back：存檔、取消、刪除後回到哪裡（例如花費明細，P6）
+export function openEdit(idx, opt = {}){
+  const date = opt.date || sel, goBack = () => opt.back ? opt.back() : closeSheet();
+  const e = dayOf(date).food[idx]; if (!e) return;
+  const base = {...e}, lw = linkedWater(dayOf(date), e);
   openSheet(`
     <h2>修改這筆</h2>
     <div class="field">品名<input id="eN" value="${esc(e.name)}"></div>
@@ -723,12 +725,12 @@ export function openEdit(idx){
       $('#eK').value = r1(base.k*m); $('#eP').value = r1(base.p*m); $('#eC').value = r1(base.c*m); $('#eF').value = r1(base.f*m); };
     document.querySelectorAll('[data-mul]').forEach(b => b.onclick = () => applyMul(+b.dataset.mul));
     $('#eMul').oninput = () => applyMul(+$('#eMul').value);
-    $('#eCancel').onclick = closeSheet;
+    $('#eCancel').onclick = goBack;
     $('#eWater').onchange = () => { $('#eWaterMl').disabled = !$('#eWater').checked; if ($('#eWater').checked && !$('#eWaterMl').value) $('#eWaterMl').focus(); };
     let armed = false;
     $('#eDel').onclick = () => {
       if (!armed) { armed = true; $('#eDel').textContent = '再按一次確認刪除'; return; }
-      closeSheet(); removeFood(idx); };
+      removeFood(idx, date); goBack(); };
     $('#eSave').onclick = () => {
       const name = $('#eN').value.trim(), k = +$('#eK').value;
       if (!name || !(k >= 0) || $('#eK').value === '') { $('#eNote').className = 'note warn'; $('#eNote').textContent = '請填品名和熱量。'; return; }
@@ -739,21 +741,21 @@ export function openEdit(idx){
       const upd = {name, k:r1(k), p:r1(+$('#eP').value||0), c:r1(+$('#eC').value||0), f:r1(+$('#eF').value||0), s:r1(+$('#eS').value||0), fb:r1(+$('#eFb').value||0), na:r0(+$('#eNa').value||0), meal: $('#eMeal [aria-pressed=true]').dataset.v};
       if (cost > 0) upd.cost = cost;
       if ($('#eSnack').checked) upd.snack = true;
-      const d = dayOf(sel); let wmsg = '';
+      const d = dayOf(date); let wmsg = '';
       if (wOn) {
         upd.wid = e.wid || newId();
         const w = linkedWater(d, e);
         if (w) { const old = w.ml; d.water = Math.max(0, d.water - old + wml); w.ml = wml; w.from = name; w.wid = upd.wid; if (wml !== old) wmsg = `飲水從 ${old} 改成 ${wml} ml。`; }
         else { pushWater(wml, upd); wmsg = `已算進飲水 ${wml} ml。`; }
       } else { const ml = unlinkWater(d, e); if (ml) wmsg = `已從飲水扣掉 ${ml} ml。`; }
-      d.food[idx] = upd; saveDay(sel);
+      d.food[idx] = upd; saveDay(date);
       if ($('#eHist').checked) {
         const h = profile.history || (profile.history = []);
         const i = h.findIndex(x => x.n === base.name || x.n === name);
         if (i >= 0) { h[i] = {...h[i], n:name, k:upd.k, p:upd.p, c:upd.c, f:upd.f, s:upd.s, fb:upd.fb, na:upd.na}; if (upd.cost) h[i].cost = upd.cost; saveProfile(); }
         else remember(upd);
       }
-      closeSheet(); render(); if (wmsg) toast(wmsg); };
+      render(); goBack(); if (wmsg) toast(wmsg); };
   });
 }
 

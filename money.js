@@ -1,6 +1,6 @@
 /* 每日食帳 · money.js — 花費：物品清單、每日成本、回購週期、30 天回顧、花費圖表、首頁花費卡、物品 CSV */
-import { $, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, r0, r1, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
-import { render } from './diet.js';
+import { $, SPEND_ORDER, profile, ui, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, parseYmd, r0, r1, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
+import { openEdit, render } from './diet.js';
 
 
 // 買滿 30 天、開了回顧、還沒回答的
@@ -174,6 +174,73 @@ export function openItems(){
   });
 }
 
+/* ---------- 花費明細（P6）：依月份列出所有金錢紀錄，每筆可點開修改，改完回到明細 ---------- */
+const ledgerBudgetTable = () => ''; // 預算對照：預算功能完成後補上
+const MEAL_NAME = Object.fromEntries(MEALS);
+const WEEKDAY = '日一二三四五六';
+// 一個月的金錢紀錄：有填金額的飲食（歸「食」）＋那個月買的物品（依購買日，D6 現金制）
+export function monthEntries(ym){
+  const out = [];
+  Object.keys(days).filter(k => k.startsWith(ym)).forEach(k => (days[k].food || []).forEach((f, i) => {
+    if (N0(f.cost) > 0) out.push({src:'food', date:k, idx:i, name:f.name, amount:N0(f.cost), cat:'食', meal:f.meal, snack:!!f.snack}); }));
+  liveItems().filter(x => x.date.startsWith(ym)).forEach(x => out.push({src:'item', date:x.date, id:x.id, name:x.name, amount:x.price, cat:x.cat, type:x.type}));
+  return out.sort((a,b) => b.date.localeCompare(a.date) || (a.src === b.src ? (a.src === 'food' ? a.idx - b.idx : 0) : a.src === 'food' ? -1 : 1));
+}
+// 最早有金錢紀錄的月份（翻月的下限）
+function firstMoneyMonth(){
+  let m = TODAY.slice(0,7);
+  Object.keys(days).forEach(k => { if ((days[k].food || []).some(f => N0(f.cost) > 0) && k.slice(0,7) < m) m = k.slice(0,7); });
+  liveItems().forEach(x => { if (x.date.slice(0,7) < m) m = x.date.slice(0,7); });
+  return m;
+}
+// 明細目前的月份、篩選與捲動位置；從修改畫面回來時照原樣恢復
+const led = {ym:null, kind:'all', cat:'', top:0};
+export function openLedger(reset){
+  if (reset || !led.ym) Object.assign(led, {ym:TODAY.slice(0,7), kind:'all', cat:'', top:0});
+  const ym = led.ym, all = monthEntries(ym);
+  const food = all.filter(x => x.src === 'food').reduce((s,x) => s + x.amount, 0), goods = all.filter(x => x.src === 'item').reduce((s,x) => s + x.amount, 0);
+  const byKind = all.filter(x => led.kind === 'all' || x.src === led.kind);
+  const cats = [...new Set(byKind.map(x => x.cat))].sort((a,b) => SPEND_ORDER(a) - SPEND_ORDER(b));
+  if (led.cat && !cats.includes(led.cat)) led.cat = '';
+  const shown = byKind.filter(x => !led.cat || x.cat === led.cat);
+  const groups = []; shown.forEach(x => { const g = groups[groups.length-1]; if (g && g.date === x.date) g.list.push(x); else groups.push({date:x.date, list:[x]}); });
+  const row = x => x.src === 'food'
+    ? `<button type="button" class="row erow" data-editfood="${x.idx}" data-date="${x.date}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}${x.snack ? '<span class="tag">零食</span>' : ''}</div><div class="m">${MEAL_NAME[x.meal] || ''} · 食</div></div><span class="k num">${money(x.amount)}</span>${CHEV}</button>`
+    : `<button type="button" class="row erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}</div><div class="m">${typeName(x.type)} · ${esc(x.cat)}</div></div><span class="k num">${money(x.amount)}</span>${CHEV}</button>`;
+  const filtered = led.kind !== 'all' || led.cat;
+  openSheet(`
+    <h2>花費明細</h2>
+    <div class="sechead ledmonth"><button type="button" class="btn ghost" id="ledPrev" aria-label="上個月" ${ym <= firstMoneyMonth() ? 'disabled' : ''}>‹</button>
+      <b id="ledMonth">${ym.slice(0,4)} 年 ${+ym.slice(5)} 月</b>
+      <button type="button" class="btn ghost" id="ledNext" aria-label="下個月" ${ym >= TODAY.slice(0,7) ? 'disabled' : ''}>›</button></div>
+    <div class="m num" id="ledTotal">合計 ${money(food + goods)} · 飲食 ${money(food)} · 物品 ${money(goods)}</div>
+    ${ledgerBudgetTable(ym)}
+    <div class="seg" id="ledKind" role="group" aria-label="來源">${[['all','全部'],['food','飲食'],['item','物品']].map(([k,l]) => `<button type="button" data-v="${k}" aria-pressed="${k===led.kind}">${l}</button>`).join('')}</div>
+    ${cats.length ? `<div class="seg ledcat" id="ledCat" role="group" aria-label="分類"><button type="button" data-v="" aria-pressed="${!led.cat}">全部分類</button>${cats.map(c => `<button type="button" data-v="${esc(c)}" aria-pressed="${c===led.cat}">${esc(c)}</button>`).join('')}</div>` : ''}
+    <div class="wsec"><h3>${filtered ? `<span class="m num" id="ledShown">${shown.length} 筆 · ${money(shown.reduce((s,x) => s + x.amount, 0))}</span>` : `<span class="m num" id="ledShown">${shown.length} 筆</span>`}${shown.length ? HINT : ''}</h3>
+      ${groups.length ? groups.map(g => `<div class="ledday"><span>${mmdd(g.date)}（${WEEKDAY[parseYmd(g.date).getDay()]}）</span><span class="num">${money(g.list.reduce((s,x) => s + x.amount, 0))}</span></div>${g.list.map(row).join('')}`).join('')
+        : `<div class="empty">${all.length ? '這個篩選沒有紀錄。' : '這個月沒有花費紀錄。記一筆時填金額，或新增物品，就會出現在這裡。'}</div>`}</div>
+    <button class="btn block" id="ledClose">完成</button>
+  `, host => {
+    const sheet = host.querySelector('.sheet');
+    const again = () => { led.top = 0; openLedger(); };
+    $('#ledPrev').onclick = () => { led.ym = addMonths(led.ym, -1); again(); };
+    $('#ledNext').onclick = () => { led.ym = addMonths(led.ym, 1); again(); };
+    $('#ledKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; led.kind = b.dataset.v; again(); };
+    $('#ledCat') && ($('#ledCat').onclick = e => { const b = e.target.closest('button'); if (!b) return; led.cat = b.dataset.v; again(); });
+    $('#ledClose').onclick = () => { closeSheet(); render(); };
+    // 點開修改：自己處理，不交給首頁的全域點擊（那邊會用首頁選取日、改完回到物品與花費）
+    sheet.addEventListener('click', e => {
+      const b = e.target.closest('[data-editfood],[data-edititem]'); if (!b) return;
+      e.stopPropagation(); led.top = sheet.scrollTop;
+      const back = () => openLedger();
+      if (b.dataset.edititem) { const it = items.find(x => x.id === b.dataset.edititem && !x.del); if (it) openItemForm(it, back); }
+      else openEdit(+b.dataset.editfood, {date:b.dataset.date, back});
+    });
+    sheet.scrollTop = led.top;
+  });
+}
+
 /* 新增／修改物品 */
 export function openItemForm(it, back){
   const isNew = !it;
@@ -276,6 +343,7 @@ export function openItemForm(it, back){
 
 /* ---------- 綁定按鈕與事件（原本在頂層直接執行；入口在全部模組載入後依序呼叫）---------- */
 export function bindMoney(){
+  $('#ledgerOpen').onclick = () => { if (profile) openLedger(true); else ui.openSettings(true); };
   $('#bkCsv').onclick = () => {
     const q = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g,'""') + '"' : t; };
     const ml = Object.fromEntries(MEALS);

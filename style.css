@@ -266,3 +266,10 @@ button.chip{border:0;font:inherit}
 .bighead .nm{font-weight:700;font-size:15px}
 .bighead .m{text-align:right;font-size:12.5px;color:var(--muted)}
 .hint{font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;letter-spacing:0}
+/* P6 花費明細 */
+.ledmonth{justify-content:center;gap:14px}
+.ledmonth .btn{min-width:44px;font-size:18px;padding:4px 10px}
+.ledmonth b{font-family:var(--num);font-size:16px}
+.ledcat{margin-top:-4px}
+.ledday{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-weight:700;padding:10px 0 2px;border-top:1px solid var(--line)}
+.ledday + .row.erow{border-top:0}
