@@ -30,6 +30,9 @@ export const AVOID_KW = {
 export const APAP_MAX = 4000;
 export const TIMINGS = ['飯前','飯後','睡前','不限'];
 export const KINDS = {short:'短期療程', long:'長期固定', prn:'需要時才吃'};
+// 補給品頻率（P9）：只有 daily 列入每日評分。舊品項沒有 freq，管理頁會請使用者逐項選；選之前當作需要時才吃、不扣分
+export const FREQS = {daily:'每天吃', prn:'需要時才吃'};
+const freqUnset = () => supps().filter(s => !FREQS[s.freq]);
 export const supps = () => profile.supps || (profile.supps = []);
 export const meds = () => profile.meds || (profile.meds = []);
 export const medActive = m => !m.archived && !(m.kind === 'short' && m.end && m.end < TODAY);
@@ -69,12 +72,13 @@ export function renderCare(){
     const mine = dl.filter(x => x.id === s.id), last = mine[mine.length - 1];
     const ing = (s.items || []).map(it => `${it.n === 'other' ? (it.label || '其他') : NUTR[it.n].n} ${it.amt}${it.n === 'other' ? (it.unit || '') : NUTR[it.n].u}`).join('、');
     const tip = (s.items || []).map(it => NUTR[it.n] && NUTR[it.n].tip).filter(Boolean)[0] || '';
-    return `<div class="crow"><div class="t"><div>${esc(s.name)}${s.when ? `<span class="tag">${esc(s.when)}</span>` : ''}</div>
+    return `<div class="crow"><div class="t"><div>${esc(s.name)}${s.when ? `<span class="tag">${esc(s.when)}</span>` : ''}${s.freq === 'prn' ? '<span class="tag">需要時</span>' : ''}</div>
       <div class="m">${esc(ing)}${s.dose > 1 ? ` · 一次 ${s.dose} 顆` : ''}</div>${tip ? `<div class="tipline">${esc(tip)}</div>` : ''}</div>
       <div class="cact">${mine.length ? `<span class="done num">✓ ${hm(last.t)}${mine.length > 1 ? ` ×${mine.length}` : ''}</span>` : ''}
       ${today ? `<button class="btn${mine.length ? ' ghost' : ' primary'}" data-takesupp="${s.id}">${mine.length ? '再吃一次' : '吃了'}</button>` : ''}
       ${today && mine.length ? `<button class="linkbtn" data-undosupp="${s.id}">復原</button>` : ''}</div></div>`;
-  }).join('') : '<div class="empty">還沒有補給品。按「管理」新增你在吃的品項。</div>';
+  }).join('') + (freqUnset().length ? `<div class="note" id="freqHint">有 ${freqUnset().length} 項還沒選「每天吃」或「需要時才吃」，按右上「管理」選一下。選之前不計分。</div>` : '')
+    : '<div class="empty">還沒有補給品。按「管理」新增你在吃的品項。</div>';
   const tot = nutrTotals(sel);
   $('#suppTotals').innerHTML = Object.keys(tot).length ? '<div class="totals">' + Object.entries(tot).map(([k,v]) => {
     const N = NUTR[k], over = v > N.ul;
@@ -143,23 +147,35 @@ export function undoLog(kind, id){
 /* --- 補給品管理 --- */
 export function openSuppManager(){
   const sl = supps();
-  openSheet(`<h2>我的補給品</h2>
-    <div class="mlist">${sl.length ? sl.map(s => `<div class="crow"><div class="t"><div>${esc(s.name)}</div><div class="m">${(s.items||[]).length} 種成分${s.when ? ' · ' + esc(s.when) : ''}</div></div>
+  const unset = freqUnset();
+  // 舊品項還沒有頻率：開管理頁時請使用者逐項選（P9）
+  const ask = unset.length ? `<div class="wsec" id="freqAsk"><h3>每一項多久吃一次？</h3>
+    <div class="note">只有「每天吃」的會列入每日評分；「需要時才吃」的照常打卡、照常檢查每日上限，但沒吃不扣分。還沒選的先當作需要時才吃。</div>
+    ${unset.map(s => `<div class="crow"><div class="t"><div>${esc(s.name)}</div></div>
+      <div class="cact">${Object.entries(FREQS).map(([k,l]) => `<button class="btn${k === 'daily' ? '' : ' ghost'}" data-setfreq="${s.id}" data-v="${k}">${l}</button>`).join('')}</div></div>`).join('')}</div>` : '';
+  openSheet(`<h2>我的補給品</h2>${ask}
+    <div class="mlist">${sl.length ? sl.map(s => `<div class="crow"><div class="t"><div>${esc(s.name)}</div><div class="m">${(s.items||[]).length} 種成分 · ${FREQS[s.freq] || '還沒選頻率'}${s.when ? ' · ' + esc(s.when) : ''}</div></div>
       <div class="cact"><button class="btn ghost" data-editsupp="${s.id}">編輯</button></div></div>`).join('') : '<div class="empty">還沒有補給品。</div>'}</div>
     <div class="btnrow"><button class="btn primary" id="sNew">新增補給品</button><button class="btn ghost" id="sDone">完成</button></div>`, () => {
     $('#sNew').onclick = () => openSuppForm(null);
     $('#sDone').onclick = closeSheet;
     document.querySelectorAll('[data-editsupp]').forEach(b => b.onclick = () => openSuppForm(b.dataset.editsupp));
+    document.querySelectorAll('[data-setfreq]').forEach(b => b.onclick = () => {
+      const x = supps().find(y => y.id === b.dataset.setfreq); if (!x || !FREQS[b.dataset.v]) return;
+      x.freq = b.dataset.v; saveProfile(); render(); openSuppManager(); toast(`${x.name}：${FREQS[x.freq]}。`);
+    });
   });
 }
 export function openSuppForm(id){
-  const s = id ? supps().find(x => x.id === id) : {name:'', dose:1, when:'', items:[{n:'vitc', amt:''}]};
+  const s = id ? supps().find(x => x.id === id) : {name:'', dose:1, when:'', freq:'daily', items:[{n:'vitc', amt:''}]};
   let items = (s.items || []).map(x => ({...x}));
   const opts = sel => Object.entries(NUTR).map(([k,v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v.n}${v.u ? `（${v.u}）` : ''}</option>`).join('');
   openSheet(`<h2>${id ? '編輯' : '新增'}補給品</h2>
     <div class="field">品名<input id="fsName" maxlength="40" placeholder="例如 某牌 B 群、魚油" value="${esc(s.name)}"></div>
     <div class="grid2"><label>一次吃幾顆<input id="fsDose" type="number" inputmode="decimal" step="0.5" min="0.5" value="${s.dose || 1}"></label>
       <label>什麼時候吃<select id="fsWhen">${['','早餐','午餐','晚餐','睡前'].map(w => `<option value="${w}"${w === s.when ? ' selected' : ''}>${w || '不固定'}</option>`).join('')}</select></label></div>
+    <div class="field">多久吃一次<div class="seg" id="fsFreq">${Object.entries(FREQS).map(([k,l]) => `<button type="button" data-v="${k}" aria-pressed="${k === s.freq}">${l}</button>`).join('')}</div></div>
+    <div class="note">每天吃的列入每日評分；需要時才吃的（例如不舒服才補充）照常打卡、照常檢查每日上限，但沒吃不扣分。</div>
     <div class="field">成分（每一顆的含量，看包裝營養標示）<div id="fsItems"></div></div>
     <button class="btn ghost" id="fsAddItem" type="button">＋ 再加一個成分</button>
     <div class="note">綜合維他命、B 群請把有上限的成分都填進去，App 才能跟其他產品加總。沒有列在清單的成分選「其他成分」，只記錄不檢查上限。</div>
@@ -174,6 +190,8 @@ export function openSuppForm(id){
         ${NUTR[it.n].tip ? `<div class="tipline">${NUTR[it.n].tip}</div>` : ''}</div>`).join('') || '<div class="empty">至少要有一個成分。</div>';
     };
     draw();
+    $('#fsFreq').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+      $('#fsFreq').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('#fsItems').addEventListener('change', e => { const i = +e.target.dataset.i; if (e.target.classList.contains('iN')) { items[i].n = e.target.value; draw(); } });
     $('#fsItems').addEventListener('input', e => { const i = +e.target.dataset.i, c = e.target.classList;
       if (c.contains('iA')) items[i].amt = e.target.value; if (c.contains('iL')) items[i].label = e.target.value; if (c.contains('iU')) items[i].unit = e.target.value; });
@@ -188,7 +206,9 @@ export function openSuppForm(id){
         ? {n:'other', amt:+it.amt, label:(it.label||'').trim().slice(0,20), unit:(it.unit||'').trim().slice(0,8)} : {n:it.n, amt:+it.amt});
       if (!name) { $('#fsErr').textContent = '請填品名。'; return; }
       if (!clean.length) { $('#fsErr').textContent = '請至少填一個成分的含量。'; return; }
-      const v = {id: id || newId(), name, dose: Math.max(0.5, +$('#fsDose').value || 1), when: $('#fsWhen').value, items: clean};
+      const fb = $('#fsFreq [aria-pressed=true]');
+      if (!fb) { $('#fsErr').textContent = '請選多久吃一次。'; return; }
+      const v = {id: id || newId(), name, dose: Math.max(0.5, +$('#fsDose').value || 1), when: $('#fsWhen').value, freq: fb.dataset.v, items: clean};
       profile.supps = id ? supps().map(x => x.id === id ? v : x) : [...supps(), v];
       saveProfile(); render(); openSuppManager(); toast(`已儲存 ${name}。`);
     };

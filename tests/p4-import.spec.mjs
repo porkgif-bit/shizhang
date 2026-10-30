@@ -42,7 +42,7 @@ test('P4：匯入後鎖定分數（含版本）原樣保留，舊制分數不被
   await gotoDay(page, '2026-08-26');
   await expect(page.locator('#gLabel')).toContainText('舊制 A（92 分');
   await gotoDay(page, '2026-08-27');
-  await expect(page.locator('#gLabel')).toContainText(/結算 · 64 分|結算時 D（64 分）/);
+  await expect(page.locator('#gLabel')).toContainText(/結算 · 64 分|結算時 D（64 分）|舊制 D（64 分，計分方式已更新）/);  // P9 起計分版本為 v4，v3 的分數若不同標「舊制」
   expect(await grades()).toEqual(want);
   expect(errors).toEqual([]);
 });
