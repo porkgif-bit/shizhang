@@ -15,15 +15,15 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=f43fea9a7e">
+<link rel="stylesheet" href="style.css?v=dbc4a2ec0a">
 <!-- D11 拆檔：程式分成 core／diet／care／money／review 五個瀏覽器原生模組。
      ?v= 是各檔內容雜湊，只有改過的檔案會換號，手機才不會拿到新舊混搭的檔案；由 npm test（tests/stamp.mjs）自動更新。 -->
 <script type="importmap">
 {"imports":{
   "./core.js":"./core.js?v=10264ebc69",
-  "./diet.js":"./diet.js?v=cd4e24dcda",
+  "./diet.js":"./diet.js?v=280024658d",
   "./care.js":"./care.js?v=6d65cb06db",
-  "./money.js":"./money.js?v=07bc1ad5dd",
+  "./money.js":"./money.js?v=9af221a59f",
   "./review.js":"./review.js?v=89a5c3ffc1"
 }}
 </script>
@@ -62,7 +62,7 @@
     <div class="m num" id="weekSum"></div>
   </section>
   <section class="card" id="foodCard">
-    <div class="sechead"><h2>飲食</h2><span class="num" id="foodSum"></span></div>
+    <div class="sechead"><h2>飲食<span class="hint" id="foodHint" hidden>點一下可修改</span></h2><span class="num" id="foodSum"></span></div>
     <div id="meals"></div>
     <div class="fullrow" id="fullRow" hidden></div>
   </section>

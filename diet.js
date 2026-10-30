@@ -119,12 +119,13 @@ export function render(){
   const d = R.d;
   const foodCost = d.food.reduce((s,f) => s + N0(f.cost), 0);
   $('#foodSum').textContent = `${d.food.length} 筆` + (foodCost ? ` · NT$${foodCost.toLocaleString()}` : '');
+  $('#foodHint').hidden = !d.food.length; // P11：有可修改的列才提示
   $('#meals').innerHTML = d.food.length ? MEALS.map(([mk, ml]) => {
     const items = d.food.map((f,i) => ({...f, i})).filter(f => f.meal === mk);
     if (!items.length) return '';
     const sum = items.reduce((s,f)=>s+f.k,0);
     return `<div class="meal"><h3><span>${ml}</span><span class="num">${r0(sum)} kcal</span></h3>` + items.map(f =>
-      `<div class="row"><button class="t" data-editfood="${f.i}" aria-label="修改 ${esc(f.name)}"><div class="nm">${esc(f.name)}${f.snack?'<span class="tag">零食</span>':''}</div><div class="m">${N0(f.cost)?`NT$${N0(f.cost).toLocaleString()} · `:''}P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}${N0(f.na)?` · 鈉 ${r0(f.na)}`:''}${N0(f.s)?` · 糖 ${r1(f.s)}`:''}</div></button><span class="k">${r0(f.k)}</span><button class="del" data-delfood="${f.i}" aria-label="刪除 ${esc(f.name)}">×</button></div>`).join('') + '</div>';
+      `<div class="row fr"><button type="button" class="erow" data-editfood="${f.i}" aria-label="修改 ${esc(f.name)}"><div class="t"><div class="nm">${esc(f.name)}${f.snack?'<span class="tag">零食</span>':''}</div><div class="m">${N0(f.cost)?`NT$${N0(f.cost).toLocaleString()} · `:''}P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}${N0(f.na)?` · 鈉 ${r0(f.na)}`:''}${N0(f.s)?` · 糖 ${r1(f.s)}`:''}</div></div><span class="k">${r0(f.k)}</span><span class="chev" aria-hidden="true">›</span></button><button class="del" data-delfood="${f.i}" aria-label="刪除 ${esc(f.name)}">×</button></div>`).join('') + '</div>';
   }).join('') : `<div class="empty">${sel===TODAY?'今天還沒記錄。點下方「記一筆」，用份數最快。':'這天沒有飲食紀錄。'}</div>`;
   // 記錄完整度：0–1 餐的日子可標「這天就吃這些」
   const needFull = d.food.length && mainsOf(d) < 2 && sel <= TODAY;

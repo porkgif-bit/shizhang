@@ -105,6 +105,10 @@ export function renderSpend(){
 }
 
 /* 物品與花費 */
+// P11：可點開修改的列一律整列是按鈕、最右邊帶「›」；有這種列的區塊標題旁加提示
+const CHEV = '<span class="chev" aria-hidden="true">›</span>';
+const HINT = '<span class="hint">點一下可修改</span>';
+export const EDIT_REMIND = '記錯了？到物品與花費點這一筆就能改。';
 export function openItems(){
   const live = liveItems(), year = TODAY.slice(0,4), due = dueReviews();
   const big = live.filter(x => x.type === 'big').sort((a,b) => b.date.localeCompare(a.date));
@@ -126,21 +130,21 @@ export function openItems(){
     ${due.length ? `<div class="mlist">${due.map(reviewCard).join('')}</div>` : ''}
     <div class="wsec"><h3>近六個月花費</h3>${monthChart(TODAY.slice(0,7))}</div>
     <div class="wsec"><h3>${year} 年花在哪</h3>${rowsY.length ? rowsY.map(([c,v,sub]) => `<div class="yrow"><div class="t"><div>${esc(c)}${sub ? `<span class="m"> · ${sub}</span>` : ''}</div><div class="bar"><i style="width:${(v/maxY*100).toFixed(1)}%;background:var(--accent)"></i></div></div><span class="k num">${money(v)}</span></div>`).join('') : '<div class="empty">今年還沒有花費紀錄。</div>'}</div>
-    <div class="wsec"><h3>大件：每日成本</h3>${big.length ? big.map(x => { const c = dailyCost(x); return `<div class="bigcard">
-      <div class="sechead"><button type="button" class="linkish" data-edititem="${esc(x.id)}">${esc(x.name)}</button><span class="m num">${money(x.price)} · 已用 ${useLabel(c.used)}</span></div>
+    <div class="wsec" data-sec="big"><h3>大件：每日成本${big.length ? HINT : ''}</h3>${big.length ? big.map(x => { const c = dailyCost(x); return `<div class="bigcard">
+      <button type="button" class="erow bighead" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><span class="nm">${esc(x.name)}</span><span class="m num">${money(x.price)} · 已用 ${useLabel(c.used)}</span>${CHEV}</button>
       ${costCurve(x)}
       <div class="sechead"><span class="note">現在每天</span><b class="big2 num">${money(c.now)}</b></div>
       <div class="note">${c.used >= x.years * 365 ? `已經用滿預計的 ${x.years} 年，之後每多用一天都是賺到。` : `用滿 ${x.years} 年，會降到每天 ${money(c.plan)}。`}</div></div>`; }).join('') : '<div class="empty">新增物品時選「大件」，就會在這裡看到它每天花你多少錢。</div>'}</div>
-    <div class="wsec"><h3>消耗品：回購週期</h3>${cyc.length ? cyc.map(c => c.n < 2
-      ? `<div class="crow"><div class="t"><div>${esc(c.name)}</div><div class="m">買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)}）· 再買一次就算得出週期</div></div></div>`
-      : `<div class="crow"><div class="t"><div>${esc(c.name)}</div><div class="m">平均 ${r0(c.avg)} 天一次 · 一年約 ${money(c.year)}</div></div><span class="${c.left <= 7 ? 'due' : 'm num'}">${c.left < 0 ? `可能用完了（預計 ${mmdd(c.next)}）` : c.left <= 7 ? `約 ${mmdd(c.next)} 用完` : `還有 ${c.left} 天`}</span></div>`).join('')
+    <div class="wsec" data-sec="cons"><h3>消耗品：回購週期${cyc.length ? HINT : ''}</h3>${cyc.length ? cyc.map(c => c.n < 2
+      ? `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)}）· 再買一次就算得出週期</div></div><span></span>${CHEV}</button>`
+      : `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">平均 ${r0(c.avg)} 天一次 · 一年約 ${money(c.year)}</div></div><span class="${c.left <= 7 ? 'due' : 'm num'}">${c.left < 0 ? `可能用完了（預計 ${mmdd(c.next)}）` : c.left <= 7 ? `約 ${mmdd(c.next)} 用完` : `還有 ${c.left} 天`}</span>${CHEV}</button>`).join('')
       : '<div class="empty">新增物品時選「消耗品」，同一個品名買第二次，就會算出多久買一次。</div>'}</div>
-    <div class="wsec"><h3>後悔清單</h3>
+    <div class="wsec" data-sec="regret"><h3>後悔清單${regret.length ? HINT : ''}</h3>
       ${reviewed.length ? `<div class="m num">回顧過 ${reviewed.length} 件：值得 ${cnt('good')} · 普通 ${cnt('meh')} · 後悔 ${cnt('regret')}${regret.length ? ` · 後悔的共 ${money(regret.reduce((s,x) => s + x.price, 0))}` : ''}</div>` : ''}
-      ${regret.length ? regret.map(x => `<div class="crow"><div class="t"><button type="button" class="linkish" data-edititem="${esc(x.id)}">${esc(x.name)}</button><div class="m">${fullDate(x.date)} · ${esc(x.cat)}${x.review.note ? ` · ${esc(x.review.note)}` : ''}</div></div><span class="k num">${money(x.price)}</span></div>`).join('')
+      ${regret.length ? regret.map(x => `<button type="button" class="crow erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}${x.review.note ? ` · ${esc(x.review.note)}` : ''}</div></div><span class="k num">${money(x.price)}</span>${CHEV}</button>`).join('')
         : `<div class="empty">${reviewed.length ? '目前沒有後悔的東西 👍' : '買滿 30 天的物品會問你值不值得，選「後悔」的會出現在這裡。'}</div>`}</div>
-    <div class="wsec"><h3>全部物品 <span class="m num">${all.length} 件</span></h3>
-      ${all.length ? all.map(x => `<div class="row"><button class="t" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="nm">${esc(x.name)}<span class="tag">${typeName(x.type)}</span>${x.review ? `<span class="tag${x.review.v === 'regret' ? ' avoid' : ''}">${reviewName(x.review.v)}</span>` : ''}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}</div></button><span class="k">${money(x.price)}</span></div>`).join('') : '<div class="empty">還沒有物品。</div>'}</div>
+    <div class="wsec" data-sec="all"><h3>全部物品 <span class="m num">${all.length} 件</span>${all.length ? HINT : ''}</h3>
+      ${all.length ? all.map(x => `<button type="button" class="row erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}<span class="tag">${typeName(x.type)}</span>${x.review ? `<span class="tag${x.review.v === 'regret' ? ' avoid' : ''}">${reviewName(x.review.v)}</span>` : ''}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}</div></div><span class="k">${money(x.price)}</span>${CHEV}</button>`).join('') : '<div class="empty">還沒有物品。</div>'}</div>
     <button class="btn block" id="iClose">完成</button>
   `, host => {
     $('#iAdd').onclick = () => openItemForm(null, openItems);
@@ -227,7 +231,7 @@ export function openItemForm(it, back){
       else if (type === 'big') t = `${name} 記好了。用滿 ${years} 年，每天約 ${money(p / (years * 365))}。`;
       else if (type === 'cons') { const c = cycles().find(z => z.name === name); t = c && c.n >= 2 ? `${name} 記好了，平均 ${r0(c.avg)} 天買一次，一年約 ${money(c.year)}。` : `${name} 記好了。下次再買，就算得出多久買一次。`; }
       else t = `${name} 記好了${out.ask ? '，30 天後問你值不值得' : ''}。`;
-      toast(t); goBack(); };
+      toast(`${t}${EDIT_REMIND}`); goBack(); };
     showBig();
   });
 }

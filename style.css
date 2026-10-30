@@ -252,3 +252,18 @@ button.chip{border:0;font:inherit}
 .asktoggle{font-size:14px;color:var(--ink)}
 #spendReview:empty{display:none}
 @media (prefers-reduced-motion: reduce){.ring .val{transition:none}.toast{animation:none}}
+/* P11：可點開修改的列——整列是按鈕，最右邊「›」，標題旁小字提示 */
+.erow{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;width:100%;border:0;padding:0;border-radius:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.erow:active{background:var(--accent-soft)}
+.erow .nm{overflow-wrap:anywhere}
+.row.erow{padding:7px 0;border-top:1px solid var(--line)}
+.row.erow:first-of-type{border-top:0}
+.row.fr{grid-template-columns:1fr auto}
+.row.fr .erow{padding:2px 0}
+.crow.erow{padding:9px 0;border-top:1px solid var(--line)}
+.chev{color:var(--muted);font-size:20px;line-height:1;font-weight:400;padding-left:2px}
+.bighead{grid-template-columns:auto 1fr auto;margin-bottom:2px}
+.bighead .nm{font-weight:700;font-size:15px}
+.bighead .m{text-align:right;font-size:12.5px;color:var(--muted)}
+.hint{font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;letter-spacing:0}
+.hint[hidden]{display:none}
