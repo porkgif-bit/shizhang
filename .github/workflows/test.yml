@@ -1,0 +1,70 @@
+# 自動測試（D13）：每次推送 dev 都跑 npm test，任何一項失敗即標紅。
+# 在 Playwright 官方容器裡跑：瀏覽器與字型版本固定，截圖才能逐像素比對（基準檔名 *-ci.png）。
+#
+# 更新 CI 截圖基準：刻意改變畫面時，在本機 npm run baseline 更新 *-linux.png，
+# 並在 commit 說明加上 [ci-baseline]。CI 會先確認其他測試全過，才重拍 *-ci.png 並 commit 回 dev。
+name: 測試
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # 版本必須與 package.json 的 @playwright/test 相同
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: write # 只在 [ci-baseline] 時用來 commit 新基準
+    env:
+      CI: 'true'
+      SHOT_ENV: ci
+      HOME: /root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安裝相依套件
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          npm ci
+
+      - name: 重拍 CI 截圖基準（commit 說明含 [ci-baseline] 時）
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ci-baseline]')
+        run: |
+          # 其他測試先全過，才允許重拍；避免把壞掉的畫面拍成基準
+          npx playwright test -c tests/playwright.config.mjs --grep-invert 截圖
+          npx playwright test -c tests/playwright.config.mjs -g 截圖 --update-snapshots=all
+          git add tests/__screenshots__/*-ci.png
+          if git diff --cached --quiet; then echo "CI 截圖基準沒有變動"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "CI 截圖基準：依 ${GITHUB_SHA::7} 重拍（容器 playwright v1.63.0-noble）"
+          git push origin HEAD:dev
+
+      - name: 回歸測試（npm test）
+        run: npm test
+
+      - name: 確認版本號已 commit
+        run: |
+          if ! git diff --exit-code -- index.html; then
+            echo "::error::index.html 的版本號不是最新：請在本機跑 npm test，把 index.html 一起 commit"
+            exit 1
+          fi
+
+      - name: 保存測試報告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/report
+            tests/test-results
+          retention-days: 14

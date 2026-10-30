@@ -1,0 +1,88 @@
+# 上線（D13）：手動觸發。在 dev 最新版本上重跑全部測試，全過才把 dev 快轉合併到 main。
+# 用法：GitHub → Actions → 上線 → Run workflow。
+# 只做快轉：main 若有 dev 沒有的 commit，會直接失敗，不會強制覆蓋。
+name: 上線
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: write
+    env:
+      CI: 'true'
+      SHOT_ENV: ci
+      HOME: /root
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: 鎖定要上線的版本
+        id: pick
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "要上線的 dev 版本：$(git log -1 --format='%h %s')"
+          echo "目前 main：$(git log -1 --format='%h %s' origin/main)"
+
+      - name: 確認可以快轉
+        run: |
+          if [ "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)" ]; then
+            echo "::notice::main 已經是 dev 的最新版本，不需要上線"; exit 0
+          fi
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::main 有 dev 沒有的 commit，不能快轉合併。請先把 main 併回 dev 並通過測試。"
+            exit 1
+          fi
+          echo "這次上線包含："; git log --oneline origin/main..HEAD
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 回歸測試（npm test）
+        run: npm test
+
+      - name: 確認版本號已 commit
+        run: |
+          if ! git diff --exit-code -- index.html; then
+            echo "::error::index.html 的版本號不是最新，不能上線"; exit 1
+          fi
+
+      - name: 快轉合併到 main
+        run: git push origin "${{ steps.pick.outputs.sha }}:refs/heads/main"
+
+      - name: 保存測試報告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/report
+            tests/test-results
+          retention-days: 14
+
+  pages:
+    # 保險：請 GitHub Pages 從 main 重新發布（若推送已觸發發布，多一次也無妨）
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+    steps:
+      - name: 觸發 GitHub Pages 發布
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "::warning::無法主動觸發 Pages 發布；請到 Actions 確認 pages build and deployment 有跑"
+      - name: 上線摘要
+        run: echo "已上線 ${{ needs.release.outputs.sha }}；約 1 分鐘後 GitHub Pages 生效。" >> "$GITHUB_STEP_SUMMARY"

@@ -23,9 +23,16 @@
 
 `index.html` 的 importmap 幫每個檔案加上 `?v=內容雜湊`，只有改過的檔案會換號；`npm test` 會自動更新，改完記得把 `index.html` 一起 commit。
 
+## 分支與上線（D13）
+
+- `main`：GitHub Pages 從這裡發布，**不直接推送**。
+- `dev`：所有開發都推到這裡。每次推送 GitHub Actions 自動跑「測試」（`npm test`），失敗即標紅。
+- 上線：GitHub → Actions → **上線** → Run workflow。它會在 dev 最新版本上重跑全部測試，全過才把 dev 快轉合併到 main；main 若有 dev 沒有的 commit 會直接失敗，不會強制覆蓋。約 1 分鐘後網址生效。
+- 退回：在 dev 上 `git revert` 要撤掉的 commit，推送、測試通過後再跑一次「上線」。
+
 ## 回歸測試
 
-推送前必須全部通過，任何一項失敗都不推送。
+推送前必須全部通過，任何一項失敗都不推送（推送後 GitHub Actions 會再跑一次）。
 
 ```
 npm install                         # 第一次
@@ -35,5 +42,6 @@ npm test                            # 一個指令跑完全部測試
 
 - 測試只用 `tests/fixtures/` 的示範資料（全部虛構，`npm run demo` 可重新產生），時鐘固定在 2026-10-28 20:00，所有對外連線（Google 登入、雲端、字型）一律擋掉，不碰任何真實帳號或紀錄。
 - 截圖比對：首頁、記一筆、週回顧、物品與花費、設定五個畫面，必須和 `tests/__screenshots__/` 的基準逐像素相同。字型在不同作業系統會有像素差，所以基準依系統分開存；這台電腦沒有基準時，截圖測試會自動略過，其他測試照跑。要在自己電腦建立基準：先切到已知正確的版本執行 `npm run baseline`。
-- 刻意改變畫面的修正，要在同一個 commit 更新基準（`npm run baseline`），並在 commit 說明寫出更新哪幾張、為什麼。
+- GitHub Actions 在固定版本的 Playwright 容器裡跑，使用另一組基準 `*-ci.png`；CI 上缺基準一律算失敗，不會略過。
+- 刻意改變畫面的修正，要在同一個 commit 更新基準（`npm run baseline`），並在 commit 說明寫出更新哪幾張、為什麼；說明裡再加 `[ci-baseline]`，CI 會先確認其他測試全過，再重拍 `*-ci.png` 並 commit 回 dev（推送後記得 `git pull`）。
 - 測試結果報告：`npx playwright show-report tests/report`。
