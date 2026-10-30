@@ -263,11 +263,14 @@ export async function saveFile(filename, data, type){
 }
 // 匯入：檔案裡有的日期會覆蓋，沒有的日期保留
 export let pendingImport = null;
+// 匯入時保留飲水連結碼與鎖定分數（P4）：wid 連結飲料和飲水；grade 含版本 v，舊制分數不能被重算蓋掉
+const okId = x => typeof x === 'string' && /^[\w-]{1,20}$/.test(x);
+const okGrade = x => !!x && typeof x === 'object' && /^[A-F]$/.test(x.g) && typeof x.score === 'number' && x.score >= 0 && x.score <= 100 && typeof x.v === 'number';
 export function applyImport({o, ks}){
   ks.forEach(k => { const d = o.days[k];
-    days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s', ...(N0(f.cost)>0?{cost:r0(N0(f.cost))}:{}), ...(f.snack?{snack:true}:{})})),
-      water:N0(d.water), waterLog:Array.isArray(d.waterLog)?d.waterLog.filter(x=>x&&N0(x.ml)>0).map(x=>({ml:N0(x.ml), t:N0(x.t), ...(x.old?{old:true}:{})})):undefined, ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null,
-      supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, ...(d.full?{full:true}:{})};
+    days[k] = {food: d.food.filter(f => f && typeof f.name === 'string').map(f => ({name:f.name.slice(0,120), k:N0(f.k), p:N0(f.p), c:N0(f.c), f:N0(f.f), s:N0(f.s), fb:N0(f.fb), na:N0(f.na), meal:['b','l','d','s'].includes(f.meal)?f.meal:'s', ...(N0(f.cost)>0?{cost:r0(N0(f.cost))}:{}), ...(f.snack?{snack:true}:{}), ...(okId(f.wid)?{wid:f.wid}:{})})),
+      water:N0(d.water), waterLog:Array.isArray(d.waterLog)?d.waterLog.filter(x=>x&&N0(x.ml)>0).map(x=>({ml:N0(x.ml), t:N0(x.t), ...(x.old?{old:true}:{}), ...(typeof x.from==='string'?{from:x.from.slice(0,120)}:{}), ...(okId(x.wid)?{wid:x.wid}:{})})):undefined, ex:Array.isArray(d.ex)?d.ex.filter(x=>x&&typeof x.name==='string').map(x=>({name:x.name, met:N0(x.met), min:N0(x.min)})):[], weight:N0(d.weight)||null,
+      supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, ...(d.full?{full:true}:{}), ...(okGrade(d.grade)?{grade:{v:N0(d.grade.v), g:d.grade.g, score:r0(d.grade.score)}}:{})};
     saveDay(k); });
   if (Array.isArray(o.items)) { mergeItems(o.items.map(cleanItem).filter(Boolean)); lsSave(); markDirty(); }
   if (o.profile && typeof o.profile === 'object') {
