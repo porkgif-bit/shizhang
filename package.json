@@ -1,0 +1,15 @@
+{
+  "name": "shizhang",
+  "private": true,
+  "description": "每日食帳的回歸測試（App 本身不需要建置，這個檔案只給 tests/ 用）",
+  "scripts": {
+    "test": "node tests/stamp.mjs && playwright test -c tests/playwright.config.mjs",
+    "baseline": "playwright test -c tests/playwright.config.mjs -g 截圖 --update-snapshots",
+    "serve": "node tests/serve.mjs",
+    "stamp": "node tests/stamp.mjs",
+    "demo": "node tests/fixtures/make-demo.mjs && node tests/fixtures/make-old-backup.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
