@@ -135,15 +135,41 @@
 <div id="sheetHost"></div>
 
 <script type="module">
-// 入口：全部模組載入後，把畫面函式交給 core，依序綁定按鈕，最後啟動（順序同拆檔前）
-import { ui, init, bindCore } from './core.js';
-import { render, openSettings, bindDiet } from './diet.js';
-import { bindCare } from './care.js';
-import { bindMoney } from './money.js';
-import { bindReview } from './review.js';
-Object.assign(ui, { render, openSettings });
-bindCore(); bindDiet(); bindCare(); bindReview(); bindMoney();
-init();
+// 入口：全部模組載入後，把畫面函式交給 core，依序綁定按鈕，最後啟動（順序同拆檔前）。
+// P10：部署後的快取空窗可能拿到新舊混搭的模組而載入失敗（白畫面）。這時自動重新整理一次；
+// 用 sessionStorage 記號確保同一次開啟只重整一次，再失敗就顯示提示，不無限重整。
+// 依序 await import，模組的執行順序與原本的靜態 import 完全相同。
+const RELOADED = 'shizhang.reloaded';
+const ss = { get: () => { try { return sessionStorage.getItem(RELOADED); } catch { return 'unavailable'; } },
+  set: () => { try { sessionStorage.setItem(RELOADED, String(Date.now())); return true; } catch { return false; } },
+  clear: () => { try { sessionStorage.removeItem(RELOADED); } catch {} } };
+let mods;
+try {
+  const core = await import('./core.js');
+  const diet = await import('./diet.js');
+  const care = await import('./care.js');
+  const money = await import('./money.js');
+  const review = await import('./review.js');
+  mods = { core, diet, care, money, review };
+} catch (e) {
+  console.warn('模組載入失敗：', e);
+  if (!ss.get() && ss.set()) location.reload();
+  else {
+    const box = document.createElement('div');
+    box.id = 'loadFail'; box.setAttribute('role', 'alert');
+    box.style.cssText = 'position:fixed;left:16px;right:16px;top:16px;z-index:99;background:#fff;color:#222;border:1px solid #d9a441;border-radius:14px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.15);font:15px/1.5 system-ui,sans-serif';
+    box.innerHTML = '<b>App 沒有載入完整</b><div style="margin:4px 0 10px;font-size:13.5px">可能剛好遇到更新。你的紀錄都還在，稍等一兩分鐘再重新整理就好。</div><button type="button" style="font:inherit;padding:8px 14px;border-radius:10px;border:0;background:#1f6f5c;color:#fff">重新整理</button>';
+    box.querySelector('button').onclick = () => { ss.clear(); location.reload(); };
+    document.body.appendChild(box);
+  }
+}
+if (mods) {
+  ss.clear();
+  const { core: { ui, init, bindCore }, diet: { render, openSettings, bindDiet }, care: { bindCare }, money: { bindMoney }, review: { bindReview } } = mods;
+  Object.assign(ui, { render, openSettings });
+  bindCore(); bindDiet(); bindCare(); bindReview(); bindMoney();
+  init();
+}
 </script>
 </body>
 </html>
