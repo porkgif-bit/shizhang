@@ -17,10 +17,11 @@ export const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 export const FILE_NAME = 'shizhang-data.json';
 export let profile = null; export const days = {};
 export let items = []; // 物品清單：每件各自有 id 和 _t，刪除時留 del 標記，兩台裝置才合併得起來
+export let budgets = []; // 預算（5.2-J）：每筆 {id, cat, amount, from, essential, fixed, _t, del}，合併方式同物品
 export const LS = 'shizhang.v1', LS_TOK = 'shizhang.tok', LS_META = 'shizhang.meta';
 export function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 export function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
-export function lsSave(){ lsSet(LS, {profile, days, items}); }
+export function lsSave(){ lsSet(LS, {profile, days, items, budgets}); }
 export let meta = lsGet(LS_META) || {linked:false, fileId:null, dirty:false};
 export function saveMeta(){ lsSet(LS_META, meta); }
 export const now = () => Date.now();
@@ -28,16 +29,25 @@ export function setState(t){ $('#saveState').textContent = t; }
 export function saveProfile(){ if (profile) profile._t = now(); lsSave(); markDirty(); }
 export function saveDay(date){ if (days[date]) days[date]._t = now(); lsSave(); markDirty(); }
 export function saveItem(it){ it._t = now(); const i = items.findIndex(x => x.id === it.id); if (i >= 0) items[i] = it; else items.push(it); lsSave(); markDirty(); }
-// 每件物品各自比時間，新的贏
-export function mergeItems(list){
+// 每件物品（每筆預算）各自比時間，新的贏
+function mergeList(arr, list){
   let changed = false;
   (Array.isArray(list) ? list : []).forEach(it => {
     if (!it || typeof it.id !== 'string') return;
-    const i = items.findIndex(x => x.id === it.id);
-    if (i < 0) { items.push(it); changed = true; }
-    else if (N0(it._t) > N0(items[i]._t)) { items[i] = it; changed = true; }
+    const i = arr.findIndex(x => x.id === it.id);
+    if (i < 0) { arr.push(it); changed = true; }
+    else if (N0(it._t) > N0(arr[i]._t)) { arr[i] = it; changed = true; }
   });
   return changed;
+}
+export const mergeItems = list => mergeList(items, list);
+export const mergeBudgets = list => mergeList(budgets, list);
+export function saveBudget(b){ b._t = now(); const i = budgets.findIndex(x => x.id === b.id); if (i >= 0) budgets[i] = b; else budgets.push(b); lsSave(); markDirty(); }
+// 某分類某月的有效預算：from ≤ 該月中最新的一筆；amount 0 代表從那個月起不設預算 → 回傳 null
+export function effBudget(cat, ym){
+  let best = null;
+  budgets.forEach(b => { if (b && !b.del && b.cat === cat && b.from <= ym && (!best || b.from > best.from || (b.from === best.from && N0(b._t) > N0(best._t)))) best = b; });
+  return best && best.amount > 0 ? best : null;
 }
 export let syncTimer = null;
 export function markDirty(){ meta.dirty = true; saveMeta(); updateSyncUI(); clearTimeout(syncTimer); syncTimer = setTimeout(sync, 2000); }
@@ -109,6 +119,7 @@ export function merge(remote){
     if (!days[k] || N0(rd[k]._t) > N0(days[k]._t)) { days[k] = rd[k]; changed = true; }
   }
   if (remote && mergeItems(remote.items)) changed = true;
+  if (remote && mergeBudgets(remote.budgets)) changed = true;
   return changed;
 }
 export let syncing = false, syncAgain = false;
@@ -126,7 +137,7 @@ export async function sync(){
     }
     const changed = merge(remote);
     lsSave();
-    meta.fileId = await upload(meta.fileId, {app:'每日食帳', version:2, profile, days, items});
+    meta.fileId = await upload(meta.fileId, {app:'每日食帳', version:2, profile, days, items, budgets});
     meta.dirty = false; meta.lastSync = now(); saveMeta();
     if (changed) { ui.render(); if (profile) closeWelcome(); }
   } catch (e) {
@@ -166,6 +177,7 @@ export function openWelcome(){
 export async function init(){
   const o = lsGet(LS) || {}; profile = o.profile || null; Object.assign(days, o.days || {});
   items = Array.isArray(o.items) ? o.items : [];
+  budgets = Array.isArray(o.budgets) ? o.budgets : [];
   const ret = readAuthReturn();
   let silentWas = false; try { silentWas = sessionStorage.getItem('shizhang.silent') === '1'; sessionStorage.removeItem('shizhang.silent'); } catch {}
   if (ret && ret.ok) { meta.linked = true; saveMeta(); }
@@ -251,6 +263,18 @@ export function cleanItem(x){
   return out;
 }
 
+// 匯入的預算只留合理值：分類須是統一支出分類（含之後才開放的，避免這版把未來的資料丟掉）、金額 0–9,999,999 整數、from 為 YYYY-MM
+export function cleanBudget(x){
+  if (!x || typeof x.id !== 'string' || !x.id || !SPEND_CATS.includes(x.cat)) return null;
+  if (!(Number.isInteger(x.amount) && x.amount >= 0 && x.amount <= 9999999)) return null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(x.from)) return null;
+  const out = {id:x.id.slice(0,40), cat:x.cat, amount:x.amount, from:x.from, _t:N0(x._t)};
+  if (x.essential) out.essential = true;
+  if (x.fixed) out.fixed = true;
+  if (x.del) out.del = true;
+  return out;
+}
+
 /* ---------- 備份 ---------- */
 export const stamp = () => TODAY.replace(/-/g,'');
 export function bkMsg(t, warn){ $('#bkNote').className = warn ? 'note warn' : 'note'; $('#bkNote').textContent = t; }
@@ -280,6 +304,7 @@ export function applyImport({o, ks}){
       supps:Array.isArray(d.supps)?d.supps.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, meds:Array.isArray(d.meds)?d.meds.filter(x=>x&&x.id&&typeof x.name==='string'):undefined, ...(d.full?{full:true}:{}), ...(okGrade(d.grade)?{grade:{v:N0(d.grade.v), g:d.grade.g, score:r0(d.grade.score)}}:{})};
     saveDay(k); });
   if (Array.isArray(o.items)) { mergeItems(o.items.map(cleanItem).filter(Boolean)); lsSave(); markDirty(); }
+  if (Array.isArray(o.budgets)) { mergeBudgets(o.budgets.map(cleanBudget).filter(Boolean)); lsSave(); markDirty(); }
   if (o.profile && typeof o.profile === 'object') {
     const keep = profile || {};
     profile = {...o.profile, nick: keep.nick || o.profile.nick || ''};
@@ -310,6 +335,7 @@ export function bindCore(){
     const out = {app:'每日食帳', version:1, exportedAt:new Date().toISOString(), profile, days:{}};
     Object.keys(days).sort().forEach(k => { if (hasData(k)) out.days[k] = days[k]; });
     out.items = items;
+    out.budgets = budgets;
     saveFile(`每日食帳備份-${stamp()}.json`, JSON.stringify(out, null, 1), 'application/json');
   };
   $('#bkItemsCsv').onclick = () => {
