@@ -1,5 +1,5 @@
 /* 每日食帳 · money.js — 花費：物品清單、每日成本、回購週期、30 天回顧、花費圖表、首頁花費卡、物品 CSV */
-import { $, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, r0, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
+import { $, ITEM_CATS, ITEM_TYPES, MEALS, N0, REVIEWS, TODAY, addDays, addMonths, bkMsg, closeSheet, days, daysBetween, esc, fullDate, items, liveItems, mmdd, money, moneyShort, newId, openSheet, r0, r1, reviewName, saveFile, saveItem, sel, stamp, toast, typeName, useLabel } from './core.js';
 import { render } from './diet.js';
 
 
@@ -25,19 +25,39 @@ export function costCurve(x){
     <line x1="${X(u).toFixed(1)}" y1="4" x2="${X(u).toFixed(1)}" y2="${H-1}" class="nowl"/><circle cx="${X(u).toFixed(1)}" cy="${Y(x.price/u).toFixed(1)}" r="4" class="dot"/></svg>`;
 }
 
-// 消耗品：同名的歸一組，算平均間隔
+// 消耗品的包數（v1.8）：沒填視為 1；單位沒填叫「個」
+export const packsOf = x => Number.isInteger(x.qty) && x.qty >= 1 ? x.qty : 1;
+export const qtyLabel = x => x.qty || x.unit ? `${packsOf(x)} ${x.unit || '個'}` : '';
+
+// 消耗品：同名的歸一組，算平均間隔。
+// 有任何一次填了包數或單位，就改以「每包」計算：期間內用掉的包數＝最後一次以前買的包數總和。
+// 全部沒填包數時，結果與原本「平均幾天買一次」完全相同。
 export function cycles(){
   const g = {};
   liveItems().filter(x => x.type === 'cons').forEach(x => { const k = x.name.trim(); (g[k] = g[k] || []).push(x); });
   return Object.entries(g).map(([name, list]) => {
     list.sort((a,b) => a.date.localeCompare(b.date));
-    const last = list[list.length-1], avgPrice = list.reduce((s,x) => s + x.price, 0) / list.length;
-    if (list.length < 2) return {name, n:1, last, avgPrice};
+    const last = list[list.length-1], total = list.reduce((s,x) => s + x.price, 0), avgPrice = total / list.length;
+    const byPack = list.some(x => packsOf(x) > 1 || x.unit);
+    const unit = ([...list].reverse().find(x => x.unit) || {}).unit || '個';
+    const perPrice = total / list.reduce((s,x) => s + packsOf(x), 0);
+    const base = {name, n:list.length, last, avgPrice, byPack, unit, perPrice};
+    if (list.length < 2) return base;
     const span = daysBetween(list[0].date, last.date);
     const avg = Math.max(1, span / (list.length - 1));
-    const next = addDays(last.date, r0(avg));
-    return {name, n:list.length, last, avgPrice, avg, next, left:daysBetween(TODAY, next), year:avgPrice * 365 / avg};
+    const perPack = Math.max(1, span) / list.slice(0, -1).reduce((s,x) => s + packsOf(x), 0);
+    const next = addDays(last.date, r0(byPack ? perPack * packsOf(last) : avg));
+    return {...base, avg, perPack, next, left:daysBetween(TODAY, next), year: byPack ? perPrice * 365 / perPack : avgPrice * 365 / avg};
   }).sort((a,b) => (a.left ?? 1e9) - (b.left ?? 1e9));
+}
+// 回購週期一列的說明文字
+export function cycleNote(c){
+  if (c.n < 2) return c.byPack
+    ? `買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)} · ${qtyLabel(c.last)} · 每${c.unit} ${money(c.perPrice)}）· 再買一次就算得出每${c.unit}撐幾天`
+    : `買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)}）· 再買一次就算得出週期`;
+  return c.byPack
+    ? `每${c.unit}約撐 ${r1(c.perPack)} 天 · 每${c.unit} ${money(c.perPrice)} · 一年約 ${money(c.year)}`
+    : `平均 ${r0(c.avg)} 天一次 · 一年約 ${money(c.year)}`;
 }
 
 // 一個月的花費：飲食有填金額的 + 那個月買的物品
@@ -136,15 +156,15 @@ export function openItems(){
       <div class="sechead"><span class="note">現在每天</span><b class="big2 num">${money(c.now)}</b></div>
       <div class="note">${c.used >= x.years * 365 ? `已經用滿預計的 ${x.years} 年，之後每多用一天都是賺到。` : `用滿 ${x.years} 年，會降到每天 ${money(c.plan)}。`}</div></div>`; }).join('') : '<div class="empty">新增物品時選「大件」，就會在這裡看到它每天花你多少錢。</div>'}</div>
     <div class="wsec" data-sec="cons"><h3>消耗品：回購週期${cyc.length ? HINT : ''}</h3>${cyc.length ? cyc.map(c => c.n < 2
-      ? `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">買過 1 次（${fullDate(c.last.date)}，${money(c.last.price)}）· 再買一次就算得出週期</div></div><span></span>${CHEV}</button>`
-      : `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">平均 ${r0(c.avg)} 天一次 · 一年約 ${money(c.year)}</div></div><span class="${c.left <= 7 ? 'due' : 'm num'}">${c.left < 0 ? `可能用完了（預計 ${mmdd(c.next)}）` : c.left <= 7 ? `約 ${mmdd(c.next)} 用完` : `還有 ${c.left} 天`}</span>${CHEV}</button>`).join('')
+      ? `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">${esc(cycleNote(c))}</div></div><span></span>${CHEV}</button>`
+      : `<button type="button" class="crow erow" data-edititem="${esc(c.last.id)}" aria-label="修改 ${esc(c.name)}（最近一次購買）"><div class="t"><div>${esc(c.name)}</div><div class="m">${esc(cycleNote(c))}</div></div><span class="${c.left <= 7 ? 'due' : 'm num'}">${c.left < 0 ? `可能用完了（預計 ${mmdd(c.next)}）` : c.left <= 7 ? `約 ${mmdd(c.next)} 用完` : `還有 ${c.left} 天`}</span>${CHEV}</button>`).join('')
       : '<div class="empty">新增物品時選「消耗品」，同一個品名買第二次，就會算出多久買一次。</div>'}</div>
     <div class="wsec" data-sec="regret"><h3>後悔清單${regret.length ? HINT : ''}</h3>
       ${reviewed.length ? `<div class="m num">回顧過 ${reviewed.length} 件：值得 ${cnt('good')} · 普通 ${cnt('meh')} · 後悔 ${cnt('regret')}${regret.length ? ` · 後悔的共 ${money(regret.reduce((s,x) => s + x.price, 0))}` : ''}</div>` : ''}
       ${regret.length ? regret.map(x => `<button type="button" class="crow erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}${x.review.note ? ` · ${esc(x.review.note)}` : ''}</div></div><span class="k num">${money(x.price)}</span>${CHEV}</button>`).join('')
         : `<div class="empty">${reviewed.length ? '目前沒有後悔的東西 👍' : '買滿 30 天的物品會問你值不值得，選「後悔」的會出現在這裡。'}</div>`}</div>
     <div class="wsec" data-sec="all"><h3>全部物品 <span class="m num">${all.length} 件</span>${all.length ? HINT : ''}</h3>
-      ${all.length ? all.map(x => `<button type="button" class="row erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}<span class="tag">${typeName(x.type)}</span>${x.review ? `<span class="tag${x.review.v === 'regret' ? ' avoid' : ''}">${reviewName(x.review.v)}</span>` : ''}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}</div></div><span class="k">${money(x.price)}</span>${CHEV}</button>`).join('') : '<div class="empty">還沒有物品。</div>'}</div>
+      ${all.length ? all.map(x => `<button type="button" class="row erow" data-edititem="${esc(x.id)}" aria-label="修改 ${esc(x.name)}"><div class="t"><div class="nm">${esc(x.name)}<span class="tag">${typeName(x.type)}</span>${x.review ? `<span class="tag${x.review.v === 'regret' ? ' avoid' : ''}">${reviewName(x.review.v)}</span>` : ''}</div><div class="m">${fullDate(x.date)} · ${esc(x.cat)}${qtyLabel(x) ? ` · ${esc(qtyLabel(x))}` : ''}</div></div><span class="k">${money(x.price)}</span>${CHEV}</button>`).join('') : '<div class="empty">還沒有物品。</div>'}</div>
     <button class="btn block" id="iClose">完成</button>
   `, host => {
     $('#iAdd').onclick = () => openItemForm(null, openItems);
@@ -168,6 +188,13 @@ export function openItemForm(it, back){
       <label>價格（元）<input id="iP" type="number" inputmode="numeric" min="0" max="9999999" step="1" value="${x.price === '' ? '' : x.price}"></label>
       <label>購買日期<input id="iD" type="date" value="${x.date}" max="${TODAY}"></label>
     </div>
+    <div id="iQtyBox">
+      <div class="grid2">
+        <label>數量（選填）<input id="iQ" type="number" inputmode="numeric" min="1" max="9999" step="1" placeholder="1" value="${x.qty || ''}"></label>
+        <label>單位（選填）<input id="iU" maxlength="6" placeholder="包、瓶、罐" value="${esc(x.unit || '')}" autocomplete="off"></label>
+      </div>
+      <span class="note" id="iPerPack"></span>
+    </div>
     <div class="field">類型<div class="tabs" id="iType" role="radiogroup" aria-label="類型">${ITEM_TYPES.map(([k,l]) => `<button type="button" role="radio" data-v="${k}" aria-selected="${k===type}" aria-checked="${k===type}">${l}</button>`).join('')}</div>
       <span class="note" id="iTypeNote"></span></div>
     <div class="field">分類<div class="seg" id="iCat">${ITEM_CATS.map(c => `<button type="button" data-v="${c}" aria-pressed="${c===cat}">${c}</button>`).join('')}</div></div>
@@ -184,6 +211,9 @@ export function openItemForm(it, back){
     const price = () => +$('#iP').value || 0;
     const showBig = () => {
       $('#iBig').hidden = type !== 'big';
+      $('#iQtyBox').hidden = type !== 'cons';
+      const q = +$('#iQ').value, u = $('#iU').value.trim() || '個';
+      $('#iPerPack').textContent = Number.isInteger(q) && q > 1 && price() ? `每${u}約 ${money(price() / q)}` : '一次買好幾包的話填數量，回購週期會改算每包撐幾天。';
       $('#iY').textContent = years + ' 年';
       $('#iYNote').textContent = `用滿 ${years} 年，每天約`;
       $('#iPer').textContent = price() ? money(price() / (years * 365)) : '—';
@@ -199,13 +229,15 @@ export function openItemForm(it, back){
       $('#iRv').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z === b)); });
     $('#iYm').onclick = () => { years = Math.max(1, years - 1); showBig(); };
     $('#iYp').onclick = () => { years = Math.min(30, years + 1); showBig(); };
-    $('#iP').oninput = showBig;
+    $('#iP').oninput = showBig; $('#iQ').oninput = showBig; $('#iU').oninput = showBig;
     $('#iAsk').onchange = () => { askTouched = true; };
     // 同名消耗品：帶入上次的分類和價格
     $('#iN').onchange = () => { if (!isNew) return; const prev = liveItems().filter(i => i.name === $('#iN').value.trim()).sort((a,b) => b.date.localeCompare(a.date))[0];
       if (!prev) return;
       if (!cat) { cat = prev.cat; $('#iCat').querySelectorAll('button').forEach(z => z.setAttribute('aria-pressed', z.dataset.v === cat)); }
       if (!$('#iP').value) $('#iP').value = prev.price;
+      if (!$('#iQ').value && prev.qty) $('#iQ').value = prev.qty;
+      if (!$('#iU').value && prev.unit) $('#iU').value = prev.unit;
       if (type !== prev.type) { const b = $(`#iType [data-v="${prev.type}"]`); b && b.click(); }
       showBig(); };
     const goBack = () => back ? back() : closeSheet();
@@ -221,15 +253,21 @@ export function openItemForm(it, back){
       if (pIn === '' || !(p >= 0 && p <= 9999999)) return msg('請填價格（0～9,999,999 元）。');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > TODAY) return msg('請選購買日期（不能是未來）。');
       if (!cat) return msg('請選一個分類。');
+      const qIn = $('#iQ').value.trim(), q = +qIn, unit = $('#iU').value.trim().slice(0,6);
+      if (type === 'cons' && qIn !== '' && !(Number.isInteger(q) && q >= 1 && q <= 9999)) return msg('數量請填 1～9,999 的整數，或留白。');
       const out = {id: isNew ? newId() + newId() : it.id, name, price:p, date, type, cat};
       if (type === 'big') out.years = years;
+      if (type === 'cons' && qIn !== '') out.qty = q;
+      if (type === 'cons' && unit) out.unit = unit;
       if ($('#iAsk').checked) out.ask = true;
       if (!isNew && x.review && rv) out.review = {v:rv, note:($('#iRvNote') ? $('#iRvNote').value.trim().slice(0,200) : x.review.note || ''), at:x.review.at || TODAY};
       saveItem(out); render();
       let t;
       if (!isNew) t = `${name} 已更新。`;
       else if (type === 'big') t = `${name} 記好了。用滿 ${years} 年，每天約 ${money(p / (years * 365))}。`;
-      else if (type === 'cons') { const c = cycles().find(z => z.name === name); t = c && c.n >= 2 ? `${name} 記好了，平均 ${r0(c.avg)} 天買一次，一年約 ${money(c.year)}。` : `${name} 記好了。下次再買，就算得出多久買一次。`; }
+      else if (type === 'cons') { const c = cycles().find(z => z.name === name);
+        t = c && c.n >= 2 ? (c.byPack ? `${name} 記好了，每${c.unit}約撐 ${r1(c.perPack)} 天，一年約 ${money(c.year)}。` : `${name} 記好了，平均 ${r0(c.avg)} 天買一次，一年約 ${money(c.year)}。`)
+          : `${name} 記好了。下次再買，就算得出${c && c.byPack ? `每${c.unit}撐幾天` : '多久買一次'}。`; }
       else t = `${name} 記好了${out.ask ? '，30 天後問你值不值得' : ''}。`;
       toast(`${t}${EDIT_REMIND}`); goBack(); };
     showBig();

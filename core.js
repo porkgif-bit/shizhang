@@ -237,6 +237,10 @@ export function cleanItem(x){
     date:/^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : TODAY,
     type:['big','cons','gen'].includes(x.type) ? x.type : 'gen', cat:ITEM_CATS.includes(x.cat) ? x.cat : '其他', _t:N0(x._t)};
   if (out.type === 'big') out.years = Math.min(30, Math.max(1, r0(N0(x.years)) || 3));
+  if (out.type === 'cons') { // 包數（v1.8，選填）：數量為 1–9999 的整數，單位最多 6 字；不合理的值丟掉，視為 1
+    if (Number.isInteger(x.qty) && x.qty >= 1 && x.qty <= 9999) out.qty = x.qty;
+    if (typeof x.unit === 'string' && x.unit.trim()) out.unit = x.unit.trim().slice(0,6);
+  }
   if (x.ask) out.ask = true;
   if (x.review && REVIEWS.some(([k]) => k === x.review.v))
     out.review = {v:x.review.v, note:String(x.review.note || '').slice(0,200), at:/^\d{4}-\d{2}-\d{2}$/.test(x.review.at) ? x.review.at : TODAY};
@@ -309,8 +313,9 @@ export function bindCore(){
     const q = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g,'""') + '"' : t; };
     const live = liveItems().sort((a,b) => a.date.localeCompare(b.date));
     if (!live.length) { bkMsg('還沒有物品可以匯出。', true); return; }
-    const rows = [['購買日期','品名','價格 元','類型','分類','預計年限','回顧','回顧備註']].concat(
-      live.map(x => [x.date, x.name, x.price, typeName(x.type), x.cat, x.years || '', x.review ? reviewName(x.review.v) : '', x.review ? x.review.note : '']));
+    // 數量、單位加在最後，原本欄位順序不變
+    const rows = [['購買日期','品名','價格 元','類型','分類','預計年限','回顧','回顧備註','數量','單位']].concat(
+      live.map(x => [x.date, x.name, x.price, typeName(x.type), x.cat, x.years || '', x.review ? reviewName(x.review.v) : '', x.review ? x.review.note : '', x.qty || '', x.unit || '']));
     saveFile(`物品清單-${stamp()}.csv`, '\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n'), 'text/csv');
   };
   $('#bkImportBtn').onclick = () => {
